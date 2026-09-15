@@ -67,6 +67,23 @@ Windows 바로가기는 **시작 위치 칸이 폴더를 정한다**(대상은 `
 - [ ] Karabiner 허용 요청(시스템 확장·입력 모니터링) 전부 허용
 - [ ] Tailscale 로그인 · Moonlight 화질 설정(1440p · 40Mbps · 코덱 자동 · YUV 4:4:4)
 
-## 5. 한/영 전환 매뉴얼
+## 5. Claude 오케스트레이션 모드 (기본 꺼짐)
+
+Claude Code 설치 항목이 `claude/` 를 `~/.claude/` 로 복사한다(이미 쓰던 `settings.json`은 덮지 않음).
+
+| 파일 | 역할 |
+|---|---|
+| `agents/deep-reasoner.md` | 어려운 추론·설계·원인 분석 담당 보조 — Opus 5, effort max |
+| `agents/runner.md` | 명령 실행·검색·로그 확인 잡무 담당 보조 — Haiku 4.5, effort low |
+| `fable/fable.md` | "직접 하지 말고 두 보조에게 나눠 맡겨라" 지시문 |
+| `CLAUDE.md` | `@~/.claude/fable/active.md` — `active.md`가 있으면 그 내용을 읽는다 |
+
+- **켜기**: `fable/fable.md` 를 같은 폴더에 `active.md` 로 복사
+  - Windows: `Copy-Item ~\.claude\fable\fable.md ~\.claude\fable\active.md`
+  - Mac: `cp ~/.claude/fable/fable.md ~/.claude/fable/active.md`
+- **끄기**: `active.md` 삭제 (`Remove-Item ~\.claude\fable\active.md` / `rm ~/.claude/fable/active.md`)
+- 바꾼 뒤 새로 연 Claude 세션부터 적용된다. 두 보조는 모드와 상관없이 필요하면 부를 수 있다.
+
+## 6. 한/영 전환 매뉴얼
 
 자동 설치가 무엇을 하는지, 막혔을 때 어디를 보는지는 [`manual/한영전환_원격_매뉴얼.md`](manual/한영전환_원격_매뉴얼.md) (캡처는 `manual/캡처`).
