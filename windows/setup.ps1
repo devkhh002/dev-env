@@ -84,17 +84,28 @@ Add-Item terminal "Windows Terminal $($V.Terminal) (PowerShell을 탭으로 열�
 Add-Item npmtools "clasp $($V.Clasp) · firebase-tools $($V.Firebase) (Node 필요)" { (Has 'clasp.cmd') -and (Has 'firebase.cmd') } {
   Refresh-Path; & npm.cmd i -g "@google/clasp@$($V.Clasp)" "firebase-tools@$($V.Firebase)" 2>&1 | Select-Object -Last 2
 }
-Add-Item claude 'Claude Code + 전역 설정(CLAUDE.md·agents)' { Test-Path "$env:USERPROFILE\.local\bin\claude.exe" } {
+Add-Item claude 'Claude Code' { Test-Path "$env:USERPROFILE\.local\bin\claude.exe" } {
   Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
   $up = [Environment]::GetEnvironmentVariable('Path', 'User')
   foreach ($d in @("$env:USERPROFILE\.local\bin", "$env:APPDATA\npm")) { if ($up -notlike "*$d*") { $up = ($up.TrimEnd(';') + ';' + $d).TrimStart(';') } }
   [Environment]::SetEnvironmentVariable('Path', $up, 'User')
-  $dst = "$env:USERPROFILE\.claude"; New-Item -ItemType Directory $dst -Force | Out-Null
-  $(if (Test-Path "$Repo\claude") { Get-ChildItem "$Repo\claude" } else { @() }) | ForEach-Object {
-    $t = Join-Path $dst $_.Name
-    if ($_.Name -eq 'settings.json' -and (Test-Path $t)) { return }   # 이미 쓰던 설정은 덮지 않는다
-    Copy-Item $_.FullName $t -Recurse -Force
-  }
+}
+Add-Item claudeconfig 'Claude 설정 — 오케스트라 모드(말로 켜고 끄기·/orchestra)·상태 표시줄' {
+  $c = "$env:USERPROFILE\.claude"
+  (Test-Path "$c\commands\orchestra.md") -and (Test-Path "$c\statusline.sh") -and ((Get-Content "$c\settings.json" -Raw -EA 0) -match 'statusline\.sh')
+} {
+  $c = "$env:USERPROFILE\.claude"
+  foreach ($d in 'agents', 'fable', 'commands') { New-Item -ItemType Directory "$c\$d" -Force | Out-Null }
+  Copy-Item "$Repo\claude\agents\*" "$c\agents\" -Force
+  Copy-Item "$Repo\claude\fable\fable.md" "$c\fable\fable.md" -Force
+  Copy-Item "$Repo\claude\commands\*" "$c\commands\" -Force
+  Copy-Item "$Repo\claude\statusline.sh" "$c\statusline.sh" -Force
+  Copy-Item "$Repo\claude\CLAUDE.md" "$c\CLAUDE.md" -Force
+  # settings.json 은 덮지 않고 statusLine 만 넣는다
+  $sf = "$c\settings.json"
+  $s = if (Test-Path $sf) { Get-Content $sf -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
+  $s | Add-Member statusLine ([pscustomobject]@{ type = 'command'; command = 'bash ~/.claude/statusline.sh' }) -Force
+  [IO.File]::WriteAllText($sf, ($s | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding $false))
 }
 Add-Item gitconfig 'git 기본 설정(줄바꿈 유지·한글 파일명·이름)' { (& git config --global core.autocrlf 2>$null) -eq 'false' } {
   Refresh-Path

@@ -49,15 +49,25 @@ ins_devtools() { run "brew install git gh $NODE_FORMULA $PYTHON_FORMULA"; run "b
 chk_npmtools() { has_cmd clasp && has_cmd firebase; }
 ins_npmtools() { run "npm i -g @google/clasp@$CLASP_VER firebase-tools@$FIREBASE_VER"; }
 chk_claude()   { has_cmd claude; }
-ins_claude() {
-  run 'curl -fsSL https://claude.ai/install.sh | bash'
-  run "mkdir -p \"\$HOME/.claude\""
-  for f in "$REPO/claude/"*; do
-    [ -e "$f" ] || continue
-    n="$(basename "$f")"
-    [ "$n" = "settings.json" ] && [ -e "$HOME/.claude/settings.json" ] && continue   # 쓰던 설정은 덮지 않는다
-    run "cp -R \"$f\" \"\$HOME/.claude/\""
-  done
+ins_claude()   { run 'curl -fsSL https://claude.ai/install.sh | bash'; }
+chk_claudeconfig() { [ -f "$HOME/.claude/commands/orchestra.md" ] && [ -f "$HOME/.claude/statusline.sh" ] && grep -q 'statusline.sh' "$HOME/.claude/settings.json" 2>/dev/null; }
+ins_claudeconfig() {
+  run "mkdir -p \"\$HOME/.claude/agents\" \"\$HOME/.claude/fable\" \"\$HOME/.claude/commands\""
+  run "cp -f \"$REPO/claude/agents/\"*.md \"\$HOME/.claude/agents/\""
+  run "cp -f \"$REPO/claude/fable/fable.md\" \"\$HOME/.claude/fable/fable.md\""
+  run "cp -f \"$REPO/claude/commands/\"*.md \"\$HOME/.claude/commands/\""
+  run "cp -f \"$REPO/claude/statusline.sh\" \"$REPO/claude/CLAUDE.md\" \"\$HOME/.claude/\""
+  # settings.json 은 덮지 않고 statusLine 만 넣는다
+  if [ $DRY -eq 1 ]; then echo "   [dry-run] settings.json 에 statusLine 추가"; else
+    /usr/bin/python3 - <<'PY'
+import json, os
+p = os.path.expanduser('~/.claude/settings.json')
+try: s = json.load(open(p))
+except Exception: s = {}
+s["statusLine"] = {"type": "command", "command": "bash ~/.claude/statusline.sh"}
+json.dump(s, open(p, "w"), indent=2, ensure_ascii=False)
+PY
+  fi
 }
 chk_gitconfig() { [ "$(git config --global core.autocrlf 2>/dev/null)" = "input" ] || [ "$(git config --global core.quotepath 2>/dev/null)" = "false" ]; }
 ins_gitconfig() {
@@ -119,7 +129,8 @@ ITEMS=(
   "brew|Homebrew (맥 앱 설치 도구)|chk_brew|ins_brew"
   "devtools|git · GitHub CLI · Node 24 · Python 3.13|chk_devtools|ins_devtools"
   "npmtools|clasp $CLASP_VER · firebase-tools $FIREBASE_VER|chk_npmtools|ins_npmtools"
-  "claude|Claude Code + 전역 설정(CLAUDE.md·agents)|chk_claude|ins_claude"
+  "claude|Claude Code|chk_claude|ins_claude"
+  "claudeconfig|Claude 설정 — 오케스트라 모드(말로 켜고 끄기·/orchestra)·상태 표시줄|chk_claudeconfig|ins_claudeconfig"
   "gitconfig|git 기본 설정(한글 파일명·이름)|chk_gitconfig|ins_gitconfig"
   "gureum|한/영 전환 — 구름 입력기 + Shift+Space|chk_gureum|ins_gureum"
   "karabiner|한/영 전환 — 원격 창에서 Shift+Space (Karabiner)|chk_karabiner|ins_karabiner"
