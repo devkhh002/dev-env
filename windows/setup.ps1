@@ -1,4 +1,4 @@
-﻿﻿# 개발 환경 설치 — Windows
+﻿# 개발 환경 설치 — Windows
 #   실행하면 체크박스 목록이 뜬다. 고른 것만 설치하고, 이미 깔린 것은 건너뛴다(여러 번 실행해도 안전).
 #   powershell -ExecutionPolicy Bypass -File setup.ps1            (목록에서 고르기)
 #   powershell -ExecutionPolicy Bypass -File setup.ps1 -All       (전부)
