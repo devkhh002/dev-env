@@ -1,0 +1,2 @@
+# 줄바꿈·BOM을 git이 바꾸지 않게 (setup.ps1 은 한글 때문에 UTF-8 BOM 이 필요하다)
+* -text

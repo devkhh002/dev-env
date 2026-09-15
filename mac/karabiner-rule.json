@@ -1,0 +1,19 @@
+{
+  "description": "Moonlight + Chrome Remote: Shift+Space -> Option+Space",
+  "manipulators": [
+    {
+      "conditions": [
+        {
+          "bundle_identifiers": [
+            "^com\\.moonlight-stream\\.Moonlight$",
+            "^com\\.google\\.Chrome\\.app\\.cmkncekebbebpfilplodngbpllndjkfo$"
+          ],
+          "type": "frontmost_application_if"
+        }
+      ],
+      "from": { "key_code": "spacebar", "modifiers": { "mandatory": ["shift"] } },
+      "to": [{ "key_code": "spacebar", "modifiers": ["left_option"] }],
+      "type": "basic"
+    }
+  ]
+}

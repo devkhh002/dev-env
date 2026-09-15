@@ -1,0 +1,5 @@
+# 프로젝트 목록 — 한 줄 = 설치 목록의 체크박스 하나
+# 폴더(Windows는 C:\dev, Mac은 ~/dev 기준) | git 주소(비우면 폴더는 백업에서 직접 복원) | 바로가기 이름
+스케줄표 마이그레이션/스케줄 근태관리 | https://github.com/devkhh002/geuntae-attendance.git | Claude 근태관리
+SKPOS 지도_20260703 | | Claude SKPOS 지도
+dev-env | https://github.com/devkhh002/dev-env.git | Claude dev-env
