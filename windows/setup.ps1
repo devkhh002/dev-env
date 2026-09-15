@@ -1,4 +1,4 @@
-﻿# 개발 환경 설치 — Windows
+﻿﻿# 개발 환경 설치 — Windows
 #   실행하면 체크박스 목록이 뜬다. 고른 것만 설치하고, 이미 깔린 것은 건너뛴다(여러 번 실행해도 안전).
 #   powershell -ExecutionPolicy Bypass -File setup.ps1            (목록에서 고르기)
 #   powershell -ExecutionPolicy Bypass -File setup.ps1 -All       (전부)
@@ -168,7 +168,7 @@ if ($List) { $Items | ForEach-Object { '{0,-4} {1,-38} {2}' -f $(if ($_.Installe
 
 # ── 고르기 ──────────────────────────────────────────────────────────
 if ($All) { $Pick = $Items }
-elseif ($Only) { $ids = $Only -join ',' -split ','; $Pick = $Items | Where-Object { $ids -contains $_.Id } }
+elseif ($Only) { $ids = $Only -join ',' -split ','; $Pick = @($Items | Where-Object { $ids -contains $_.Id }) }
 else {
   Add-Type -AssemblyName System.Windows.Forms, System.Drawing
   [System.Windows.Forms.Application]::EnableVisualStyles()
