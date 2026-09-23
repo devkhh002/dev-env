@@ -182,7 +182,10 @@ else
   labels=(); defaults=()
   for it in "${ITEMS[@]}"; do
     IFS='|' read -r id name chk ins <<< "$it"
-    if $chk; then labels+=("[설치됨] $name"); else labels+=("$name"); defaults+=("$name"); fi
+    case "$id" in
+      proj*) labels+=("$name ※ 체크하면 GitHub 로그인"); $chk && labels[${#labels[@]}-1]="[설치됨] $name" ;;
+      *) if $chk; then labels+=("[설치됨] $name"); else labels+=("$name"); defaults+=("$name"); fi ;;
+    esac
   done
   as_list() { local out="" x; for x in "$@"; do x="${x//\\/\\\\}"; x="${x//\"/\\\"}"; out+="\"$x\","; done; echo "{${out%,}}"; }
   chosen="$(osascript -e "set r to choose from list $(as_list "${labels[@]}") with title \"개발 환경 설치\" with prompt \"설치할 것을 고르세요 (⌘ 누른 채 클릭하면 여러 개)\" default items $(as_list "${defaults[@]}") OK button name \"설치\" cancel button name \"취소\" with multiple selections allowed" -e 'if r is false then return "" ' -e 'set AppleScript'"'"'s text item delimiters to linefeed' -e 'return r as text')"

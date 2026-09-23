@@ -195,7 +195,12 @@ else {
   $f.Font = New-Object System.Drawing.Font('Malgun Gothic', 10)
   $lb = New-Object System.Windows.Forms.CheckedListBox
   $lb.Location = New-Object System.Drawing.Point(12, 12); $lb.Size = New-Object System.Drawing.Size(600, 440); $lb.CheckOnClick = $true
-  foreach ($it in $Items) { [void]$lb.Items.Add($(if ($it.Installed) { "[설치됨] $($it.Name)" } else { $it.Name }), -not $it.Installed) }
+  # 프로젝트 항목은 기본 체크 해제 — GitHub 로그인(8자리 코드)을 원치 않을 때 그냥 설치를 눌러도 안 뜬다
+  foreach ($it in $Items) {
+    $isProj = $it.Id -like 'proj:*'
+    $label = if ($it.Installed) { "[설치됨] $($it.Name)" } elseif ($isProj) { "$($it.Name) ※ 체크하면 GitHub 로그인" } else { $it.Name }
+    [void]$lb.Items.Add($label, ((-not $it.Installed) -and (-not $isProj)))
+  }
   $f.Controls.Add($lb)
   function Btn($text, $x, $onClick) { $b = New-Object System.Windows.Forms.Button; $b.Text = $text; $b.Location = New-Object System.Drawing.Point($x, 468); $b.Size = New-Object System.Drawing.Size(110, 34); $b.Add_Click($onClick); $f.Controls.Add($b); return $b }
   [void](Btn '전체 선택' 12 { for ($i = 0; $i -lt $lb.Items.Count; $i++) { $lb.SetItemChecked($i, $true) } })
