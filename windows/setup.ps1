@@ -118,12 +118,27 @@ Add-Item gitconfig 'git 기본 설정(줄바꿈 유지·한글 파일명·이름
   git config --global user.name $GitName
   git config --global user.email $GitEmail
 }
-Add-Item hangul '한/영 전환 (AutoHotkey: 원격에서 넘어온 Alt+Space → 한/영)' { Test-Path "$([Environment]::GetFolderPath('CommonStartup'))\hangul.ahk" } {
+Add-Item hangul '한/영 전환 (AutoHotkey: 원격에서 넘어온 Alt+Space → 한/영)' {
+  $s = [Environment]::GetFolderPath('CommonStartup')
+  (Test-Path "$env:ProgramData\hangul.ahk") -and (Test-Path "$s\hangul.lnk") -and [bool](Get-Process AutoHotkey64 -EA 0)
+} {
   $exe = "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe"
   if (-not (Test-Path $exe)) { Start-Process (Fetch 'https://www.autohotkey.com/download/ahk-v2.exe' 'ahk-v2.exe') -Wait -ArgumentList '/silent' }
-  $f = "$([Environment]::GetFolderPath('CommonStartup'))\hangul.ahk"
-  Copy-Item "$PSScriptRoot\hangul.ahk" $f -Force
-  Start-Process explorer.exe -ArgumentList "`"$f`""
+  # 스크립트는 ProgramData 에 두고, 시작 프로그램에는 AutoHotkey 실행 파일을 직접 가리키는 바로가기를 넣는다
+  # (시작 폴더에 .ahk 파일만 두면 파일 연결이 깨졌을 때 재부팅 뒤 조용히 안 뜬다)
+  $ahk = "$env:ProgramData\hangul.ahk"
+  Copy-Item "$PSScriptRoot\hangul.ahk" $ahk -Force
+  $s = [Environment]::GetFolderPath('CommonStartup')
+  Remove-Item "$s\hangul.ahk" -Force -EA 0
+  $ws = New-Object -ComObject WScript.Shell
+  $lnk = $ws.CreateShortcut("$s\hangul.lnk")
+  $lnk.TargetPath = $exe
+  $lnk.Arguments = "`"$ahk`""
+  $lnk.WorkingDirectory = $env:ProgramData
+  $lnk.Save()
+  # 지금 바로 실행 (관리자 창에서도 일반 사용자 권한으로)
+  Get-Process AutoHotkey64 -EA 0 | Stop-Process -Force -EA 0
+  Start-Process explorer.exe -ArgumentList "`"$s\hangul.lnk`""
 }
 Add-Item tailscale 'Tailscale (원격 접속 VPN)' { Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe" } {
   Start-Process (Fetch 'https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe' 'tailscale.exe') -Wait -ArgumentList '/quiet'
