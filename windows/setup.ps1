@@ -21,6 +21,7 @@ $V = @{
 $GitName  = 'Hyunhyo Kim'
 $GitEmail = 'devkhh002@gmail.com'
 $DevRoot  = 'C:\dev'
+$ClaudeModel = 'claude-opus-5-5[1m]'   # Claude Code 기본 모델 (빼려면 '' 로)
 # ────────────────────────────────────────────────────────────────────
 
 $ErrorActionPreference = 'Continue'
@@ -90,9 +91,10 @@ Add-Item claude 'Claude Code' { Test-Path "$env:USERPROFILE\.local\bin\claude.ex
   foreach ($d in @("$env:USERPROFILE\.local\bin", "$env:APPDATA\npm")) { if ($up -notlike "*$d*") { $up = ($up.TrimEnd(';') + ';' + $d).TrimStart(';') } }
   [Environment]::SetEnvironmentVariable('Path', $up, 'User')
 }
-Add-Item claudeconfig 'Claude 설정 — 오케스트라 모드(말로 켜고 끄기·/orchestra)·상태 표시줄' {
+Add-Item claudeconfig "Claude 설정 — 오케스트라 모드(말로 켜고 끄기·/orchestra)·상태 표시줄·기본 모델 $ClaudeModel" {
   $c = "$env:USERPROFILE\.claude"
-  (Test-Path "$c\commands\orchestra.md") -and (Test-Path "$c\statusline.sh") -and ((Get-Content "$c\settings.json" -Raw -EA 0) -match 'statusline\.sh')
+  $raw = Get-Content "$c\settings.json" -Raw -EA 0
+  (Test-Path "$c\commands\orchestra.md") -and (Test-Path "$c\statusline.sh") -and ($raw -match 'statusline\.sh') -and ($raw -match [regex]::Escape($ClaudeModel))
 } {
   $c = "$env:USERPROFILE\.claude"
   foreach ($d in 'agents', 'fable', 'commands') { New-Item -ItemType Directory "$c\$d" -Force | Out-Null }
@@ -101,10 +103,11 @@ Add-Item claudeconfig 'Claude 설정 — 오케스트라 모드(말로 켜고 �
   Copy-Item "$Repo\claude\commands\*" "$c\commands\" -Force
   Copy-Item "$Repo\claude\statusline.sh" "$c\statusline.sh" -Force
   Copy-Item "$Repo\claude\CLAUDE.md" "$c\CLAUDE.md" -Force
-  # settings.json 은 덮지 않고 statusLine 만 넣는다
+  # settings.json 은 덮지 않고 statusLine·기본 모델만 넣는다
   $sf = "$c\settings.json"
   $s = if (Test-Path $sf) { Get-Content $sf -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
   $s | Add-Member statusLine ([pscustomobject]@{ type = 'command'; command = 'bash ~/.claude/statusline.sh' }) -Force
+  $s | Add-Member model $ClaudeModel -Force
   [IO.File]::WriteAllText($sf, ($s | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding $false))
 }
 Add-Item gitconfig 'git 기본 설정(줄바꿈 유지·한글 파일명·이름)' { (& git config --global core.autocrlf 2>$null) -eq 'false' } {

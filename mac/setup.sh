@@ -15,6 +15,7 @@ FIREBASE_VER="15.24.0"
 GIT_NAME="Hyunhyo Kim"
 GIT_EMAIL="devkhh002@gmail.com"
 DEV_ROOT="$HOME/dev"
+CLAUDE_MODEL="claude-opus-5-5[1m]"   # Claude Code 기본 모델 (빼려면 "" 로)
 # ────────────────────────────────────────────────────────────────────
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -50,7 +51,7 @@ chk_npmtools() { has_cmd clasp && has_cmd firebase; }
 ins_npmtools() { run "npm i -g @google/clasp@$CLASP_VER firebase-tools@$FIREBASE_VER"; }
 chk_claude()   { has_cmd claude; }
 ins_claude()   { run 'curl -fsSL https://claude.ai/install.sh | bash'; }
-chk_claudeconfig() { [ -f "$HOME/.claude/commands/orchestra.md" ] && [ -f "$HOME/.claude/statusline.sh" ] && grep -q 'statusline.sh' "$HOME/.claude/settings.json" 2>/dev/null; }
+chk_claudeconfig() { [ -f "$HOME/.claude/commands/orchestra.md" ] && [ -f "$HOME/.claude/statusline.sh" ] && grep -q 'statusline.sh' "$HOME/.claude/settings.json" 2>/dev/null && grep -qF "$CLAUDE_MODEL" "$HOME/.claude/settings.json" 2>/dev/null; }
 ins_claudeconfig() {
   run "mkdir -p \"\$HOME/.claude/agents\" \"\$HOME/.claude/fable\" \"\$HOME/.claude/commands\""
   run "cp -f \"$REPO/claude/agents/\"*.md \"\$HOME/.claude/agents/\""
@@ -58,13 +59,15 @@ ins_claudeconfig() {
   run "cp -f \"$REPO/claude/commands/\"*.md \"\$HOME/.claude/commands/\""
   run "cp -f \"$REPO/claude/statusline.sh\" \"$REPO/claude/CLAUDE.md\" \"\$HOME/.claude/\""
   # settings.json 은 덮지 않고 statusLine 만 넣는다
-  if [ $DRY -eq 1 ]; then echo "   [dry-run] settings.json 에 statusLine 추가"; else
-    /usr/bin/python3 - <<'PY'
+  if [ $DRY -eq 1 ]; then echo "   [dry-run] settings.json 에 statusLine·model 추가"; else
+    CLAUDE_MODEL="$CLAUDE_MODEL" /usr/bin/python3 - <<'PY'
 import json, os
 p = os.path.expanduser('~/.claude/settings.json')
 try: s = json.load(open(p))
 except Exception: s = {}
 s["statusLine"] = {"type": "command", "command": "bash ~/.claude/statusline.sh"}
+m = os.environ.get("CLAUDE_MODEL", "")
+if m: s["model"] = m
 json.dump(s, open(p, "w"), indent=2, ensure_ascii=False)
 PY
   fi
