@@ -1,7 +1,7 @@
 # One-line bootstrap (PowerShell):
 #   irm https://raw.githubusercontent.com/devkhh002/dev-env/main/windows/install.ps1 | iex
 # Fetches only the files listed in windows/files.txt (not the whole repo — the manual captures are large)
-# and opens the setup window as administrator.
+# and opens the setup window as administrator (no console window — only the setup GUI shows).
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'
@@ -17,4 +17,4 @@ foreach ($f in $files) {
   Invoke-WebRequest "$raw/$f" -OutFile $out -UseBasicParsing
 }
 $setup = Join-Path $t 'windows\setup.ps1'
-Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$setup`"")
+Start-Process powershell -Verb RunAs -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$setup`"")
