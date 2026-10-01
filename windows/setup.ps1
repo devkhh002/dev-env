@@ -257,6 +257,7 @@ function Add-Item($group, $id, $name, $check, $install, [switch]$Off, [switch]$R
 }
 $G1 = '① 인터넷'
 $G2 = '② Windows 설정'
+$G3 = '③ 드라이버'
 $G4 = '④ 도구·앱'
 $G5 = '⑤ 개발 환경'
 $G6 = '⑥ 개발 소스 (GitHub 로그인)'
@@ -300,6 +301,58 @@ Add-Item $G2 kbtype3 '키보드 종류 유형 3 (Shift+Space 로 한/영)' { $p 
 } -Reboot
 $ctxKey = 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32'
 Add-Item $G2 classicmenu '윈11 우클릭 메뉴를 예전 방식으로' { Test-Path $ctxKey } { New-Item $ctxKey -Value '' -Force | Out-Null } -Off -Reboot
+
+# ③ 드라이버 — 그래픽은 NVIDIA 공식 조회로 늘 최신판. 랜(네트워크) 드라이버는 지금 인터넷을 쓰는 어댑터라 건드리지 않는다(원격이 끊긴다) — ① 의 USB '네트워크 드라이버' 로만.
+$NvCacheDir = "$env:LOCALAPPDATA\dev-env"
+function Get-NvGpu { Get-CimInstance Win32_VideoController -EA 0 | Where-Object { $_.PNPDeviceID -like 'PCI\VEN_10DE*' -and $_.Name -match 'GeForce' } | Select-Object -First 1 }
+# 윈도우 드라이버 버전(예: 27.21.14.5751) → NVIDIA 표기 버전(457.51): 끝 두 묶음을 붙여 뒤 5자리에 점 하나
+function Convert-NvVer($v) { $d = ("$v".Split('.')[-2..-1] -join '') -replace '\D'; if ($d.Length -lt 5) { return $null }; [double]($d.Substring($d.Length - 5).Insert(3, '.')) }
+# 카드 이름 → NVIDIA 조회 ID(계열 psid·카드 pfid) → 최신 드라이버(@{Version;Url}). 못 찾으면 $null. 상태 확인이 느려지지 않게 12시간 캐시(설치할 때는 -Fresh 로 새로 조회).
+function Get-NvLatest($gpu, [switch]$Fresh) {
+  if (-not $gpu) { return $null }
+  $cache = Join-Path $NvCacheDir ('nv-' + ($gpu.PNPDeviceID -replace '[^A-Za-z0-9]', '_') + '.json')
+  if (-not $Fresh -and (Test-Path $cache) -and (Get-Item $cache).LastWriteTime -gt (Get-Date).AddHours(-12)) {
+    try { $c = Get-Content $cache -Raw | ConvertFrom-Json; return @{ Version = [double]$c.Version; Url = $c.Url } } catch {}
+  }
+  try {
+    $ch = (Get-CimInstance Win32_SystemEnclosure -EA 0).ChassisTypes
+    $laptop = @(8, 9, 10, 14) | Where-Object { $ch -contains $_ }   # 노트북이면 '(Notebooks)' 계열을 쓴다
+    $name = ($gpu.Name -replace '^NVIDIA\s+', '').Trim()
+    $series = (Invoke-RestMethod 'https://www.nvidia.com/Download/API/lookupValueSearch.aspx?TypeID=2' -TimeoutSec 20).LookupValueSearch.LookupValues.LookupValue |
+      Where-Object { [bool]($_.Name -match 'Notebooks') -eq [bool]$laptop } | Sort-Object { [int]$_.Value } -Descending
+    $psid = $null; $pfid = $null
+    foreach ($s in $series) {
+      $cards = (Invoke-RestMethod "https://www.nvidia.com/Download/API/lookupValueSearch.aspx?TypeID=3&ParentID=$($s.Value)" -TimeoutSec 20).LookupValueSearch.LookupValues.LookupValue
+      $hit = $cards | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+      if ($hit) { $psid = $s.Value; $pfid = $hit.Value; break }
+    }
+    if (-not $pfid) { return $null }
+    $osid = if ([Environment]::OSVersion.Version.Build -ge 22000) { 135 } else { 57 }   # Win11 / Win10
+    $u = "https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php?func=DriverManualLookup&psid=$psid&pfid=$pfid&osID=$osid&languageCode=1033&isWHQL=1&dch=1&sort1=0&numberOfResults=1"
+    $d = (Invoke-RestMethod $u -TimeoutSec 20).IDS[0].downloadInfo
+    if ($d.DownloadURL) {
+      $r = @{ Version = [double]$d.Version; Url = $d.DownloadURL }
+      try { New-Item -ItemType Directory $NvCacheDir -Force | Out-Null; $r | ConvertTo-Json | Set-Content $cache } catch {}
+      return $r
+    }
+  } catch {}
+  return $null
+}
+# NVIDIA GeForce 카드가 있을 때만 항목이 뜬다 (없는 PC 에선 목록에 안 나온다)
+if (Get-NvGpu) {
+  Add-Item $G3 gpudriver 'NVIDIA 그래픽 드라이버 — 공식 조회로 최신판 (설치 중 화면이 잠깐 깜빡인다 · 원격 중엔 기본 꺼짐)' {
+    $g = Get-NvGpu; $inst = Convert-NvVer $g.DriverVersion; $lat = Get-NvLatest $g
+    (-not $lat) -or (-not $inst) -or ($inst -ge $lat.Version)   # 최신을 못 알아내면 들볶지 않는다
+  } {
+    $g = Get-NvGpu; $lat = Get-NvLatest $g -Fresh
+    if (-not $lat) { Say '   NVIDIA 최신 드라이버를 못 찾았습니다 (인터넷·카드 이름 확인)' Yellow; return }
+    Say "   지금 $(Convert-NvVer $g.DriverVersion) → 최신 $($lat.Version)"
+    $p = Fetch $lat.Url "nvidia-$($lat.Version).exe"
+    if ((Get-AuthenticodeSignature $p).Status -ne 'Valid') { Remove-Item $p -Force; throw '서명이 올바르지 않은 NVIDIA 설치 파일 — 실행하지 않음' }
+    Say '   설치 중 — 화면이 잠깐 깜빡입니다 (원격이면 잠시 끊겨 보일 수 있음)'
+    Start-Wait $p '-s -noreboot'
+  } -Off
+}
 
 # ④ 도구·앱 — winget 먼저, 그다음 catalog.txt 의 앱들
 Add-Item $G4 winget 'winget — 아래 앱들을 늘 최신판으로 설치하는 도구' { Test-Winget } { Install-Winget }
@@ -670,7 +723,7 @@ function Set-NodeLook($node) {
 function Set-Down($node, $state) { foreach ($c in $node.Nodes) { $c.Checked = $state; Set-Down $c $state } }
 function Sync-Up($node) { while ($node) { $all = $node.Nodes.Count -gt 0; foreach ($c in $node.Nodes) { if (-not $c.Checked) { $all = $false } }; $node.Checked = $all; $node = $node.Parent } }
 
-foreach ($g in @($G1, $G2, $G4, "$G4/기본 앱", "$G4/원격", "$G4/도구", "$G4/Claude", $G5, $G6, $G9)) { [void](Get-GroupNode $g) }
+foreach ($g in @($G1, $G2, $G3, $G4, "$G4/기본 앱", "$G4/원격", "$G4/도구", "$G4/Claude", $G5, $G6, $G9)) { [void](Get-GroupNode $g) }
 $NodeById = @{}
 foreach ($it in $Items) {
   $node = New-Object System.Windows.Forms.TreeNode($it.Name)
