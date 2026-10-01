@@ -77,8 +77,19 @@ function Q($s) { "'" + ([string]$s -replace "'", "''") + "'" }
 # 진행 기록: 설치 화면이 이 파일을 읽어 보여 준다(@@ 줄은 화면용 표시)
 function Mark($line) { if ($Progress) { try { [IO.File]::AppendAllText($Progress, "$line`r`n", (New-Object Text.UTF8Encoding $false)) } catch {} } }
 function Say($msg, $color = 'Gray') { Write-Host $msg -ForegroundColor $color; Mark $msg }
+# 바깥 프로그램을 시간 제한을 두고 실행 — 응답이 없으면 끝내고 $null (winget 이 반쯤 깔린 PC 에서 상태 확인이 영원히 멈추던 것)
+function Invoke-Timed($exe, [string[]]$argList, [int]$sec) {
+  $out = [IO.Path]::GetTempFileName()
+  try {
+    $p = Start-Process -FilePath $exe -ArgumentList $argList -NoNewWindow -PassThru -RedirectStandardOutput $out -EA Stop
+    $null = $p.Handle   # PS 5.1 에서 ExitCode 를 받으려면 필요
+    if (-not $p.WaitForExit($sec * 1000)) { try { $p.Kill() } catch {}; return $null }
+    return @{ Code = $p.ExitCode; Out = (Get-Content $out -Raw -EA 0) }
+  } catch { return $null } finally { Remove-Item $out -EA 0 }
+}
 function Test-Online { try { Invoke-WebRequest 'https://raw.githubusercontent.com/devkhh002/dev-env/main/README.md' -Method Head -UseBasicParsing -TimeoutSec 8 | Out-Null; $true } catch { $false } }
-function Find-UsbKit { foreach ($d in Get-PSDrive -PSProvider FileSystem -EA 0) { $k = Join-Path $d.Root 'PC설치'; if (Test-Path -LiteralPath (Join-Path $k 'start.ps1')) { return $k } }; return $null }
+# 이동식(2)·로컬(3) 드라이브만 본다 — 연결이 끊긴 네트워크 드라이브(NAS 등)는 찾는 데 한참 멈춘다
+function Find-UsbKit { foreach ($d in Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=2 OR DriveType=3' -EA 0) { $k = Join-Path "$($d.DeviceID)\" 'PC설치'; if (Test-Path -LiteralPath (Join-Path $k 'start.ps1')) { return $k } }; return $null }
 if (-not $Usb) { $Usb = Find-UsbKit }
 $script:Online = Test-Online
 
@@ -105,7 +116,15 @@ function Set-WtKeys {
 }
 
 # winget — LTSC 에는 없어서 GitHub 릴리스(앱 설치 관리자 + 의존 패키지)로 직접 깐다
-function Test-Winget { Refresh-Path; [bool](Get-Command winget -EA 0) }
+# winget 이 있고 '살아 있는지'(20초 안에 --version 응답) — 반쯤 깔려 응답이 없으면 없는 것으로 보고 다시 깔게 한다
+$script:WingetOk = $null
+function Test-Winget {
+  Refresh-Path
+  $c = Get-Command winget -EA 0
+  if (-not $c) { return $false }
+  if ($null -eq $script:WingetOk) { $r = Invoke-Timed $c.Source @('--version') 20; $script:WingetOk = [bool]($r -and $r.Code -eq 0) }
+  return $script:WingetOk
+}
 function Install-Winget {
   Say '   winget 설치 1/3: GitHub 에서 설치 파일을 받습니다(합쳐서 약 300MB — 몇 분 걸릴 수 있다)'
   $rel = Invoke-RestMethod 'https://api.github.com/repos/microsoft/winget-cli/releases/latest' -Headers @{ 'User-Agent' = 'dev-env' }
@@ -126,7 +145,8 @@ function Install-Winget {
   $deps = @(Get-ChildItem $out -Recurse -Include *.appx, *.msix | ForEach-Object FullName)
   Say ('   winget 설치 3/3: 등록합니다(1~2분, 의존 패키지 {0}개)' -f $deps.Count)
   Add-AppxProvisionedPackage -Online -PackagePath $bundle -DependencyPackagePath $deps -LicensePath $lic | Out-Null
-  Add-AppxPackage -Path $bundle -DependencyPath $deps -EA SilentlyContinue
+  Add-AppxPackage -Path $bundle -DependencyPath $deps -ForceUpdateFromAnyVersion -EA SilentlyContinue   # 반쯤 깔린 것도 다시 등록
+  $script:WingetOk = $null   # 다시 살아 있는지 본다
 }
 # 설치 상태는 winget export 한 번으로 모아 본다(앱마다 물으면 느리다)
 $script:WG = $null
@@ -135,7 +155,9 @@ function Get-WingetMap {
   if (-not (Test-Winget)) { return $m }
   New-Item -ItemType Directory $Tmp -Force | Out-Null
   $f = "$Tmp\winget-export.json"; Remove-Item $f -EA 0
-  & winget export -o $f --include-versions --accept-source-agreements --disable-interactivity *> $null
+  # 스토어(msstore) 목록은 빼고 winget 기본 목록만 — 스토어가 없는 PC 에서 거기서 멈출 수 있다. 처음엔 목록을 받느라 느릴 수 있어 2분까지
+  $r = Invoke-Timed (Get-Command winget).Source @('export', '-o', "`"$f`"", '--source', 'winget', '--include-versions', '--accept-source-agreements', '--disable-interactivity') 120
+  if (-not $r) { Write-Host '   winget 목록을 2분 안에 못 읽어 건너뜁니다 — 앱 상태는 제어판 기준으로 봅니다' -ForegroundColor Yellow }
   if (Test-Path $f) {
     try { foreach ($src in (Get-Content $f -Raw -Encoding UTF8 | ConvertFrom-Json).Sources) { foreach ($p in $src.Packages) { $m[$p.PackageIdentifier] = [string]$p.Version } } } catch {}
   }
@@ -473,7 +495,10 @@ Add-Item $G9 usbkit "USB 시작하기·예비판을 이 버전($Version)으로 �
 
 # ── 상태 ────────────────────────────────────────────────────────────
 function Invoke-Check($it) { try { [bool](& $it.Check) } catch { $false } }
-if (-not $Progress) { Write-Host '상태를 확인하는 중… (winget 목록을 읽느라 몇 초 걸린다)' }
+if (-not $Progress) { Write-Host '상태 확인 1/2: winget 이 살아 있는지 보고 목록을 읽습니다 (처음엔 최대 2분)' }
+if (Test-Winget) { $script:WG = Get-WingetMap }
+else { $script:WG = @{}; if (-not $Progress) { Write-Host '   winget 이 없거나 응답하지 않습니다 — 설치 화면의 winget 항목으로 (다시) 깔 수 있습니다' -ForegroundColor Yellow } }
+if (-not $Progress) { Write-Host '상태 확인 2/2: 나머지 항목' }
 foreach ($it in $Items) { $it.Installed = Invoke-Check $it }
 if ($List) { "버전 $Version"; foreach ($it in $Items) { '{0,-4} {1,-26} {2,-30} {3}' -f $(if ($it.Installed) { 'OK' } else { '--' }), ($it.Group -replace '/', ' > '), $it.Id, $it.Name }; return }
 
