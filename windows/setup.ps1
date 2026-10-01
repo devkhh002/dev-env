@@ -281,6 +281,17 @@ function Add-CatalogItem($e) {
 }
 foreach ($e in $Catalog | Where-Object Group -ne '개발 환경') { Add-CatalogItem $e }
 
+# 반디집 무료판의 광고·분석·알림·업데이트 확인을 hosts 로 막는다 — 방화벽이 꺼져 있어도 동작한다
+# (주소는 반디집 파일 안에 적힌 것에서 뽑았다. 반디소프트 자기 주소만 — 구글 광고 주소는 브라우저까지 망가뜨려 두지 않는다)
+$HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
+$BandiBlock = 'adv.bandi.so', 'ana.bandi.so', 'log.bandi.so', 'ver.bandi.so', 'notice.bandisoft.com', 'go.bandisoft.com'
+function Get-BandiMissing { $h = @(Get-Content $HostsFile -EA 0); @($BandiBlock | Where-Object { $d = [regex]::Escape($_); -not ($h -match "^\s*0\.0\.0\.0\s+$d\s*$") }) }
+Add-Item "$G4/기본 앱" bandiad '반디집 광고 막기 (광고·분석·알림·업데이트 확인 주소를 hosts 로 — 방화벽이 꺼져 있어도 된다)' { (Get-BandiMissing).Count -eq 0 } {
+  $add = Get-BandiMissing
+  if ($add) { [IO.File]::AppendAllText($HostsFile, "`r`n# dev-env: Bandizip ads/telemetry/notice/update-check block`r`n" + (($add | ForEach-Object { "0.0.0.0 $_" }) -join "`r`n") + "`r`n", [Text.Encoding]::ASCII) }
+  ipconfig /flushdns | Out-Null
+}
+
 Add-Item "$G4/원격" hangul '한/영 전환 (AutoHotkey 관리자 권한 + 10분마다 자동 확인·복구)' {
   $t = Get-ScheduledTask -TaskName 'hangul-ahk' -EA 0
   [bool]$t -and ($t.Principal.RunLevel -eq 'Highest') -and (Test-Path "$env:ProgramData\hangul.ahk") -and [bool](Get-Process AutoHotkey64 -EA 0)
