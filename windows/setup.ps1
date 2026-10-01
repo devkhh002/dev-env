@@ -44,6 +44,27 @@ function Refresh-Path { $env:Path = [Environment]::GetEnvironmentVariable('Path'
 function Fetch($url, $name) { $p = "$Tmp\$name"; if (-not (Test-Path $p)) { Write-Host "   받는 중: $name"; Invoke-WebRequest $url -OutFile $p -UseBasicParsing }; return $p }
 function Msi($p) { Start-Process msiexec -Wait -ArgumentList "/i `"$p`" /qn /norestart" }
 function Has($cmd) { Refresh-Path; return [bool](Get-Command $cmd -EA 0) }
+# Windows Terminal 은 처음 뜰 때 만드는 설정에 Ctrl+C(선택한 글자 복사)·Ctrl+V(붙여넣기)를 넣는다.
+# 우리가 settings.json 을 먼저 만들면 그게 빠져 Ctrl+V 가 Claude Code 로 그냥 넘어간다(붙여넣기 안 됨) — 직접 넣는다
+$WtSettings = "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
+function Test-WtKeys { (Test-Path $WtSettings) -and ((Get-Content $WtSettings -Raw -Encoding UTF8) -match '"keys"\s*:\s*"ctrl\+v"') }
+function Set-WtKeys {
+  New-Item -ItemType Directory (Split-Path $WtSettings) -Force | Out-Null
+  if (Test-Path $WtSettings) {
+    try { $s = Get-Content $WtSettings -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return }   # 주석이 든 파일 = WT 가 직접 만든 것이라 이미 들어 있다
+  } else {
+    $s = [pscustomobject]@{ defaultProfile = '{574e775e-4f2a-5b96-ac1e-a2962a402336}'; profiles = [pscustomobject]@{ defaults = [pscustomobject]@{}; list = @() } }
+  }
+  $acts = @(@($s.actions) | Where-Object { $_ -and $_.id -notin 'User.copy.644BA8F2', 'User.paste' }) + @(
+    [pscustomobject]@{ command = [pscustomobject]@{ action = 'copy'; singleLine = $false }; id = 'User.copy.644BA8F2' },
+    [pscustomobject]@{ command = 'paste'; id = 'User.paste' })
+  $keys = @(@($s.keybindings) | Where-Object { $_ -and $_.keys -notin 'ctrl+c', 'ctrl+v' }) + @(
+    [pscustomobject]@{ id = 'User.copy.644BA8F2'; keys = 'ctrl+c' },
+    [pscustomobject]@{ id = 'User.paste'; keys = 'ctrl+v' })
+  $s | Add-Member actions $acts -Force
+  $s | Add-Member keybindings $keys -Force
+  [IO.File]::WriteAllText($WtSettings, ($s | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding $false))
+}
 
 # ── 설치 항목 ───────────────────────────────────────────────────────
 $Items = [System.Collections.Generic.List[object]]::new()
@@ -67,20 +88,19 @@ Add-Item pwsh "PowerShell $($V.Pwsh)" { Test-Path 'C:\Program Files\PowerShell\7
   $p = Fetch "https://github.com/PowerShell/PowerShell/releases/download/v$($V.Pwsh)/PowerShell-$($V.Pwsh)-win-x64.msi" "pwsh-$($V.Pwsh).msi"
   Start-Process msiexec -Wait -ArgumentList "/i `"$p`" /qn /norestart ADD_PATH=1 ENABLE_PSREMOTING=0 REGISTER_MANIFEST=1"
 }
-Add-Item terminal "Windows Terminal $($V.Terminal) (PowerShell을 탭으로 열기)" { [bool](Get-AppxPackage Microsoft.WindowsTerminal) } {
-  $base = "https://github.com/microsoft/terminal/releases/download/v$($V.Terminal)/Microsoft.WindowsTerminal_$($V.Terminal)_8wekyb3d8bbwe.msixbundle"
-  $bundle = Fetch $base "wt-$($V.Terminal).msixbundle"
-  $kit = Fetch "$($base)_Windows10_PreinstallKit.zip" "wt-$($V.Terminal)-kit.zip"
-  Expand-Archive $kit "$Tmp\wtkit" -Force
-  $deps = Get-ChildItem "$Tmp\wtkit" -Recurse -Filter *.appx | Where-Object { $_.Name -match 'x64' } | ForEach-Object FullName
-  Add-AppxPackage -Path $bundle -DependencyPath $deps
+Add-Item terminal "Windows Terminal $($V.Terminal) (PowerShell을 탭으로 열기·Ctrl+C/V 복사·붙여넣기)" { [bool](Get-AppxPackage Microsoft.WindowsTerminal) -and (Test-WtKeys) } {
+  if (-not (Get-AppxPackage Microsoft.WindowsTerminal)) {
+    $base = "https://github.com/microsoft/terminal/releases/download/v$($V.Terminal)/Microsoft.WindowsTerminal_$($V.Terminal)_8wekyb3d8bbwe.msixbundle"
+    $bundle = Fetch $base "wt-$($V.Terminal).msixbundle"
+    $kit = Fetch "$($base)_Windows10_PreinstallKit.zip" "wt-$($V.Terminal)-kit.zip"
+    Expand-Archive $kit "$Tmp\wtkit" -Force
+    $deps = Get-ChildItem "$Tmp\wtkit" -Recurse -Filter *.appx | Where-Object { $_.Name -match 'x64' } | ForEach-Object FullName
+    Add-AppxPackage -Path $bundle -DependencyPath $deps
+  }
   $k = 'HKCU:\Console\%%Startup'; New-Item $k -Force | Out-Null
   Set-ItemProperty $k DelegationConsole '{2EACA947-7F5F-4CFA-BA87-8F7FBEEFBE69}'
   Set-ItemProperty $k DelegationTerminal '{E12CFF52-A866-4C77-9A90-F570A7AA2C6B}'
-  $ls = "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState"; New-Item -ItemType Directory $ls -Force | Out-Null
-  if (-not (Test-Path "$ls\settings.json")) {
-    [IO.File]::WriteAllText("$ls\settings.json", '{"defaultProfile":"{574e775e-4f2a-5b96-ac1e-a2962a402336}","profiles":{"defaults":{},"list":[]}}', (New-Object Text.UTF8Encoding $false))
-  }
+  Set-WtKeys
 }
 Add-Item npmtools "clasp $($V.Clasp) · firebase-tools $($V.Firebase) (Node 필요)" { (Has 'clasp.cmd') -and (Has 'firebase.cmd') } {
   Refresh-Path; & npm.cmd i -g "@google/clasp@$($V.Clasp)" "firebase-tools@$($V.Firebase)" 2>&1 | Select-Object -Last 2
