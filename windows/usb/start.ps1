@@ -40,9 +40,19 @@ if (Online) {
   } catch { Write-Host "GitHub 에서 받지 못했습니다: $_" -ForegroundColor Yellow }
 }
 
-$dir = if ($fresh) { $t } elseif (Test-Path "$good\windows\setup.ps1") { Write-Host 'USB 에 저장된 마지막 판으로 엽니다.' -ForegroundColor Yellow; $good } else { $null }
+function Ver($d) { $v = Get-Content "$d\windows\version.txt" -Encoding UTF8 -EA 0 | Select-Object -First 1; if ($v) { $v } else { '알 수 없음' } }
+$dir = if ($fresh) { Write-Host "GitHub 최신판을 받았습니다 — 버전 $(Ver $t)" -ForegroundColor Green; $t }
+       elseif (Test-Path "$good\windows\setup.ps1") { Write-Host "GitHub 에서 받지 못해 USB 예비판으로 엽니다 — 버전 $(Ver $good)" -ForegroundColor Yellow; $good }
+       else { $null }
 if (-not $dir) { Write-Host '설치 프로그램을 열 수 없습니다. 인터넷 연결을 확인하세요.' -ForegroundColor Red; Read-Host 'Enter 를 누르면 닫습니다'; return }
 
-Write-Host '설치 화면을 엽니다...'
+Write-Host '설치 화면을 엽니다... (화면 제목에 같은 버전이 보입니다)'
 $p = Start-Process powershell -Wait -PassThru -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$dir\windows\setup.ps1`"", '-Usb', "`"$kit`""
-if ($fresh -and $p.ExitCode -eq 0) { robocopy $t $good /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null; Write-Host 'USB 의 마지막 판을 갱신했습니다.' }
+if ($fresh -and $p.ExitCode -eq 0) {
+  robocopy $t $good /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+  # USB 맨 위의 '버전 ….txt' 도 맞춘다 — 탐색기에서 파일 이름만 보면 이 USB 예비판의 버전을 안다
+  $v = Ver $good
+  Get-ChildItem -LiteralPath $kit -Filter '버전 *.txt' -EA 0 | Remove-Item -Force
+  [IO.File]::WriteAllText((Join-Path $kit ('버전 ' + ($v -replace ':', '.') + '.txt')), "이 USB 에 들어 있는 설치 프로그램 버전: $v`r`n설치 화면 제목에도 같은 버전이 보입니다.`r`n", (New-Object Text.UTF8Encoding $true))
+  Write-Host "USB 예비판을 버전 $v 로 갱신했습니다."
+}

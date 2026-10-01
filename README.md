@@ -9,6 +9,9 @@ Windows 는 단계별 화면(① 인터넷 → ② Windows 설정 → ④ 도구
 인터넷이 없으면 USB 의 `네트워크 드라이버` 를 먼저 깔고, GitHub 의 최신 설치 화면을 연다.
 GitHub 에서 받지 못하면 USB 에 저장된 마지막 판(`last-good`, 잘 돈 판이 자동 저장된다)으로 연다.
 
+**버전 확인**: 설치 화면 제목·검은 창·USB 맨 위 `버전 ….txt` 파일 이름에 같은 버전(예: `2026-10-02 00:45`)이 보인다.
+버전은 `windows/version.txt` 이고, 설치 파일이 바뀌는 커밋마다 그 시각으로 자동으로 바뀐다(`.git/hooks/pre-commit`).
+
 **Windows — 인터넷이 되는 PC**: 바탕화면의 `개발 환경 설치 (GitHub)` 바로가기, 또는 PowerShell 에 붙여넣기
 
 ```powershell

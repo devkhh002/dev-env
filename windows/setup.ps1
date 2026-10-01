@@ -33,6 +33,9 @@ $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $Repo = Split-Path $PSScriptRoot -Parent
+# 버전 — windows/version.txt 한 줄(커밋할 때 자동으로 그 시각이 된다). 설치 화면 제목·USB 의 '버전 ….txt' 에 보인다
+$Version = Get-Content "$PSScriptRoot\version.txt" -Encoding UTF8 -EA 0 | Select-Object -First 1
+if (-not $Version) { $Version = '알 수 없음' }
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin -and -not $List -and -not $Snapshot) {
@@ -429,9 +432,15 @@ foreach ($line in $projLines) {
 
 # 관리
 $UsbKitFiles = [ordered]@{ 'start.ps1' = 'start.ps1'; 'start.cmd' = '시작하기.cmd'; 'README.txt' = '읽어보기.txt' }   # 저장소 usb\ 이름 → USB 이름
-Add-Item $G9 usbkit 'USB 시작하기 만들기·갱신 (Ventoy USB 에 PC설치 폴더)' {
+function Get-UsbVersion($k) { Get-Content -LiteralPath "$k\last-good\windows\version.txt" -Encoding UTF8 -EA 0 | Select-Object -First 1 }
+# USB 맨 위의 '버전 ….txt' — 탐색기에서 파일 이름만 보면 이 USB 의 설치 프로그램 버전을 안다
+function Set-UsbMarker($k, $v) {
+  Get-ChildItem -LiteralPath $k -Filter '버전 *.txt' -EA 0 | Remove-Item -Force
+  [IO.File]::WriteAllText((Join-Path $k ('버전 ' + ($v -replace ':', '.') + '.txt')), "이 USB 에 들어 있는 설치 프로그램 버전: $v`r`n설치 화면 제목에도 같은 버전이 보입니다.`r`n", (New-Object Text.UTF8Encoding $true))
+}
+Add-Item $G9 usbkit "USB 시작하기·예비판을 이 버전($Version)으로 만들기·갱신 (Ventoy USB 의 PC설치)" {
   $k = Find-UsbKit
-  [bool]$k -and -not ($UsbKitFiles.Keys | Where-Object { -not (Test-Path -LiteralPath "$k\$($UsbKitFiles[$_])") -or (Get-FileHash -LiteralPath "$k\$($UsbKitFiles[$_])").Hash -ne (Get-FileHash "$PSScriptRoot\usb\$_").Hash })
+  [bool]$k -and ((Get-UsbVersion $k) -eq $Version) -and -not ($UsbKitFiles.Keys | Where-Object { -not (Test-Path -LiteralPath "$k\$($UsbKitFiles[$_])") -or (Get-FileHash -LiteralPath "$k\$($UsbKitFiles[$_])").Hash -ne (Get-FileHash "$PSScriptRoot\usb\$_").Hash })
 } {
   $k = Find-UsbKit
   if (-not $k) {
@@ -441,19 +450,27 @@ Add-Item $G9 usbkit 'USB 시작하기 만들기·갱신 (Ventoy USB 에 PC설치
   }
   New-Item -ItemType Directory "$k\네트워크 드라이버", "$k\도구" -Force | Out-Null
   foreach ($src in $UsbKitFiles.Keys) { Copy-Item "$PSScriptRoot\usb\$src" "$k\$($UsbKitFiles[$src])" -Force }
-  Say "   $k 에 만들었습니다 — 기종마다 랜 드라이버 폴더를 '네트워크 드라이버' 에 넣어 두세요"
+  # 예비판(last-good) = 지금 돌고 있는 이 설치 프로그램 그대로(files.txt 목록)
+  foreach ($f in Get-Content "$PSScriptRoot\files.txt" -Encoding UTF8 | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' }) {
+    $f = $f.Trim(); $dst = Join-Path "$k\last-good" ($f -replace '/', '\')
+    New-Item -ItemType Directory (Split-Path $dst) -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $Repo ($f -replace '/', '\')) $dst -Force
+  }
+  Set-UsbMarker $k $Version
+  Say "   $k 를 버전 $Version 으로 맞췄습니다 — 기종마다 랜 드라이버 폴더를 '네트워크 드라이버' 에 넣어 두세요"
 } -Off
 
 # ── 상태 ────────────────────────────────────────────────────────────
 function Invoke-Check($it) { try { [bool](& $it.Check) } catch { $false } }
 if (-not $Progress) { Write-Host '상태를 확인하는 중… (winget 목록을 읽느라 몇 초 걸린다)' }
 foreach ($it in $Items) { $it.Installed = Invoke-Check $it }
-if ($List) { foreach ($it in $Items) { '{0,-4} {1,-26} {2,-30} {3}' -f $(if ($it.Installed) { 'OK' } else { '--' }), ($it.Group -replace '/', ' > '), $it.Id, $it.Name }; return }
+if ($List) { "버전 $Version"; foreach ($it in $Items) { '{0,-4} {1,-26} {2,-30} {3}' -f $(if ($it.Installed) { 'OK' } else { '--' }), ($it.Group -replace '/', ' > '), $it.Id, $it.Name }; return }
 
 # ── 설치(일꾼) ──────────────────────────────────────────────────────
 function Run-Install($Pick) {
   Start-Transcript "$env:USERPROFILE\dev-env-setup.log" -Append | Out-Null
-  try { $Host.UI.RawUI.WindowTitle = '개발 PC 설치 — 진행 중 (이 창을 닫지 마세요)' } catch {}
+  try { $Host.UI.RawUI.WindowTitle = "개발 PC 설치 버전 $Version — 진행 중 (이 창을 닫지 마세요)" } catch {}
+  Say "설치 프로그램 버전 $Version" Cyan
   $reboot = @(); $n = 0
   foreach ($it in $Pick) {
     $n++
@@ -505,11 +522,11 @@ function Sz($w, $h) { New-Object System.Drawing.Size($w, $h) }
 $font = New-Object System.Drawing.Font('Malgun Gothic', 10)
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = '개발 PC 설치'; $form.ClientSize = Sz 864 800; $form.StartPosition = 'CenterScreen'; $form.Font = $font
+$form.Text = "개발 PC 설치 — 버전 $Version"; $form.ClientSize = Sz 864 800; $form.StartPosition = 'CenterScreen'; $form.Font = $font
 $board = (Get-CimInstance Win32_BaseBoard -EA 0).Product
 $head = New-Object System.Windows.Forms.Label
 $head.Location = Pt 12 10; $head.Size = Sz 840 24
-$head.Text = "$env:COMPUTERNAME · $board · " + $(if ($script:Online) { '인터넷 연결됨' } else { '인터넷 없음 — 먼저 ① 네트워크 드라이버' }) + $(if ($Usb) { " · USB $Usb" } else { '' })
+$head.Text = "버전 $Version · $env:COMPUTERNAME · $board · " + $(if ($script:Online) { '인터넷 연결됨' } else { '인터넷 없음 — 먼저 ① 네트워크 드라이버' }) + $(if ($Usb) { " · USB $Usb" } else { '' })
 $tv.CheckBoxes = $true; $tv.Location = Pt 12 40; $tv.Size = Sz 840 560; $tv.Font = $font
 $log = New-Object System.Windows.Forms.TextBox
 $log.Multiline = $true; $log.ReadOnly = $true; $log.ScrollBars = 'Vertical'; $log.Location = Pt 12 610; $log.Size = Sz 840 130; $log.BackColor = [System.Drawing.Color]::White
