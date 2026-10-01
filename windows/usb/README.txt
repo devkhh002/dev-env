@@ -13,5 +13,11 @@
    예)  도구 | 모두의 프린터 | usb:mo.exe | on
    .zip 은 C:\Tools\이름 에 풀리고, .exe·.msi 는 실행됩니다(설치 창은 직접 넘깁니다).
 
-4. last-good 폴더
+4. Remiz WSH (방화벽·디펜더·업데이트 등 윈도우 초기 설정)
+   설치 화면의 'Remiz WSH 열기' 버튼이 '도구' 폴더의 'WSH by Remiz.cmd' 를 그대로 띄웁니다.
+   이 도구는 'remiz' 폴더(dControl·Wub 등)가 옆에 있어야 동작합니다.
+   디펜더가 켜져 있으면 dControl·Wub 를 HackTool 로 막아 복사가 안 되니,
+   디펜더를 끈 뒤 'WSH by Remiz.cmd' 와 'remiz' 폴더를 '도구' 안에 넣어 두세요(WSH.iso 내용 그대로).
+
+5. last-good 폴더
    마지막으로 잘 돌았던 설치 프로그램이 자동으로 저장됩니다. GitHub 에서 받지 못할 때 이것으로 엽니다. 지우지 마세요.

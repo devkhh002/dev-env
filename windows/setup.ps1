@@ -537,6 +537,12 @@ function New-Btn($text, $x, $w, $onClick) {
 function Set-AllChecked($state) { $script:Busy = $true; foreach ($n in $tv.Nodes) { $n.Checked = $state; Set-Down $n $state }; $script:Busy = $false }
 $bAll = New-Btn '전체 선택' 12 100 { Set-AllChecked $true }
 $bNone = New-Btn '전체 해제' 118 100 { Set-AllChecked $false }
+# Remiz WSH 도구(방화벽·디펜더·업데이트 등 윈도우 초기 설정)를 그대로 연다 — USB PC설치\도구 의 사용자 도구를 띄우기만 한다
+$bWsh = New-Btn 'Remiz WSH 열기' 300 160 {
+  $p = if ($Usb) { Join-Path (Join-Path $Usb '도구') 'WSH by Remiz.cmd' } else { $null }
+  if ($p -and (Test-Path -LiteralPath $p)) { Start-Process -FilePath $p }
+  else { [void][System.Windows.Forms.MessageBox]::Show("USB 의 PC설치\도구 폴더에 'WSH by Remiz.cmd' 가 없습니다.`r`nRemiz 도구를 그 폴더에 넣어 두세요.", 'Remiz WSH') }
+}
 $bGo = New-Btn '선택한 것 설치' 604 140 { Start-Worker }
 $bClose = New-Btn '닫기' 752 100 { $form.Close() }
 
