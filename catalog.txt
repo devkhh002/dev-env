@@ -1,0 +1,28 @@
+# 앱·도구 목록 — 한 줄 = 설치 화면의 체크박스 하나. 이 파일만 고쳐 올리면 모든 PC 의 설치 화면에 반영된다.
+# 그룹 | 이름 | 설치 방법 | 기본 체크(on/off) | 확인 이름(없어도 됨)
+#   그룹     : 기본 앱 · 원격 · 도구 · Claude · 개발 환경   (새 이름을 쓰면 그 이름으로 묶인다. 개발 환경은 ⑤ 로 간다)
+#   설치 방법: winget:아이디        — 늘 최신판 (아이디 찾기: PowerShell 에서  winget search 이름)
+#             winget:아이디@버전   — 그 버전으로 고정 (모두 최신으로 에서도 안 올라간다)
+#             msstore:아이디       — Microsoft Store 앱
+#             usb:파일이름         — USB 의 PC설치\도구 폴더에 넣은 파일 (.zip 은 C:\Tools\이름 에 풀고, .exe·.msi 는 실행)
+#   확인 이름: winget 밖에서 깐 앱이 '설치됨' 으로 안 보일 때만 쓴다
+#             arp:제어판 프로그램 이름 일부   ·   appx:스토어 앱 패키지 이름      (비우면 '이름' 으로 제어판을 찾는다)
+기본 앱 | Chrome | winget:Google.Chrome | on | arp:Google Chrome
+기본 앱 | 네이버 웨일 | winget:NAVER.Whale | on
+기본 앱 | 반디집 | winget:Bandisoft.Bandizip | on
+기본 앱 | PotPlayer | winget:Daum.PotPlayer | off
+원격 | Chrome 원격 데스크톱 호스트 | winget:Google.ChromeRemoteDesktopHost | on
+도구 | 유니콘 HTTPS | winget:UnicornSoft.UnicornHTTPS | on
+도구 | TrafficMonitor | winget:zhongyang219.TrafficMonitor.Full | on
+도구 | HWiNFO | winget:REALiX.HWiNFO | on
+도구 | CPU-Z (MSI판) | winget:CPUID.CPU-Z.MSI | on
+도구 | 스티커 메모 | msstore:9NBLGGH4QGHW | on | appx:Microsoft.MicrosoftStickyNotes
+도구 | 꿀뷰 | winget:Bandisoft.Honeyview | off
+도구 | Notepad++ | winget:Notepad++.Notepad++ | off
+도구 | qBittorrent | winget:qBittorrent.qBittorrent | off
+도구 | Logi Options+ | winget:Logitech.OptionsPlus | off
+도구 | Steam | winget:Valve.Steam | off
+도구 | Epic Games | winget:EpicGames.EpicGamesLauncher | off
+도구 | Omnissa Horizon | winget:Omnissa.HorizonClient | off
+Claude | Claude 데스크톱 앱 | winget:Anthropic.Claude | on
+개발 환경 | VirtualBox 7.2.14 (winpos VM 용, 버전 고정) | winget:Oracle.VirtualBox@7.2.14 | on

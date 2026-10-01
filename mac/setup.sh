@@ -51,7 +51,8 @@ chk_npmtools() { has_cmd clasp && has_cmd firebase; }
 ins_npmtools() { run "npm i -g @google/clasp@$CLASP_VER firebase-tools@$FIREBASE_VER"; }
 chk_claude()   { has_cmd claude; }
 ins_claude()   { run 'curl -fsSL https://claude.ai/install.sh | bash'; }
-chk_claudeconfig() { [ -f "$HOME/.claude/commands/orchestra.md" ] && [ -f "$HOME/.claude/statusline.sh" ] && grep -q 'statusline.sh' "$HOME/.claude/settings.json" 2>/dev/null && grep -qF "$CLAUDE_MODEL" "$HOME/.claude/settings.json" 2>/dev/null; }
+# 기본 모델은 비어 있거나 예전에 이 설치가 넣던 값(claude-opus-5-5[1m])일 때만 넣는다 — 직접 고른 모델은 그대로
+chk_claudeconfig() { [ -f "$HOME/.claude/commands/orchestra.md" ] && [ -f "$HOME/.claude/statusline.sh" ] && grep -q 'statusline.sh' "$HOME/.claude/settings.json" 2>/dev/null && { [ -z "$CLAUDE_MODEL" ] || { grep -q '"model"' "$HOME/.claude/settings.json" 2>/dev/null && ! grep -qF '"claude-opus-5-5[1m]"' "$HOME/.claude/settings.json" 2>/dev/null; }; }; }
 ins_claudeconfig() {
   run "mkdir -p \"\$HOME/.claude/agents\" \"\$HOME/.claude/fable\" \"\$HOME/.claude/commands\""
   run "cp -f \"$REPO/claude/agents/\"*.md \"\$HOME/.claude/agents/\""
@@ -67,7 +68,7 @@ try: s = json.load(open(p))
 except Exception: s = {}
 s["statusLine"] = {"type": "command", "command": "bash ~/.claude/statusline.sh"}
 m = os.environ.get("CLAUDE_MODEL", "")
-if m: s["model"] = m
+if m and (not s.get("model") or s.get("model") in ("claude-opus-5-5[1m]",)): s["model"] = m
 json.dump(s, open(p, "w"), indent=2, ensure_ascii=False)
 PY
   fi

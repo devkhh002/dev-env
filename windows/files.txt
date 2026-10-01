@@ -1,0 +1,14 @@
+# 한 줄 설치(install.ps1)와 USB 시작하기(usb/start.ps1)가 받는 파일 — 설치에 쓰는 파일을 더하면 여기에도 더한다
+windows/setup.ps1
+windows/hangul.ahk
+windows/usb/start.ps1
+windows/usb/start.cmd
+windows/usb/README.txt
+projects.txt
+catalog.txt
+claude/CLAUDE.md
+claude/statusline.sh
+claude/agents/deep-reasoner.md
+claude/agents/runner.md
+claude/commands/orchestra.md
+claude/fable/fable.md
