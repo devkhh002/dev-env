@@ -237,6 +237,7 @@ function Install-UsbTool($name, $file) {
   if (-not $Usb) { Say '   USB(PC설치 폴더)를 찾지 못했습니다' Yellow; return }
   $p = Join-Path (Join-Path $Usb '도구') $file
   if (-not (Test-Path -LiteralPath $p)) { Say "   USB 에 파일이 없습니다: $p" Yellow; return }
+  Unblock-File -LiteralPath $p -EA 0   # 내려받은 키트의 '인터넷에서 받은 파일' 표시 — 남아 있으면 SmartScreen 이 막는다
   switch ([IO.Path]::GetExtension($p).ToLower()) {
     '.zip' { Expand-Archive -LiteralPath $p "C:\Tools\$name" -Force }
     '.msi' { Start-Wait msiexec "/i `"$p`"" }
@@ -697,14 +698,28 @@ function New-Btn($text, $x, $w, $onClick) {
   $b.Text = $text; $b.Location = Pt $x 754; $b.Size = Sz $w 34; $b.Add_Click($onClick); $form.Controls.Add($b); return $b
 }
 function Set-AllChecked($state) { $script:Busy = $true; foreach ($n in $tv.Nodes) { $n.Checked = $state; Set-Down $n $state }; $script:Busy = $false }
+# Remiz WSH 도구(방화벽·디펜더·업데이트 등 윈도우 초기 설정)를 그대로 연다 — USB PC설치\도구 의 사용자 도구를 띄우기만 한다
+# - 내려받은 압축을 푼 키트는 파일마다 '인터넷에서 받은 파일' 표시가 붙어, .cmd 를 바로 띄우면 SmartScreen·보안 경고가 막는다(Access is denied)
+#   → 표시를 지우고, cmd.exe 로 띄운다(관리자)
+# - WSH 는 안의 도구를 따옴표 없이 부른다(start %~dp0remiz\ub\Wub.exe) — 폴더 경로에 빈칸이 있으면(바탕화면 'PC설치 (1)' 등) 빈 드라이브 문자로 연결해 띄운다
+function Open-Wsh {
+  $d = if ($Usb) { Join-Path $Usb '도구' } else { $null }
+  if (-not ($d -and (Test-Path -LiteralPath (Join-Path $d 'WSH by Remiz.cmd')))) { [void][System.Windows.Forms.MessageBox]::Show("USB 의 PC설치\도구 폴더에 'WSH by Remiz.cmd' 가 없습니다.`r`nRemiz 도구를 그 폴더에 넣어 두세요.", 'Remiz WSH'); return }
+  if (-not (Test-Path -LiteralPath (Join-Path $d 'remiz'))) { [void][System.Windows.Forms.MessageBox]::Show("PC설치\도구 에 remiz 폴더가 없어 WSH 안의 도구(디펜더 끄기·업데이트 차단 등)는 열리지 않습니다.`r`n원본 WSH 의 remiz 폴더를 그 옆에 복사해 두세요 (디펜더가 켜져 있으면 복사를 막습니다).", 'Remiz WSH') }
+  Get-ChildItem -LiteralPath $d -Recurse -File -EA 0 | Unblock-File -EA 0
+  if ($d -match '\s') {
+    if (-not $script:WshDrive) {
+      $l = [char[]](90..68) | ForEach-Object { "${_}:" } | Where-Object { [Environment]::GetLogicalDrives() -notcontains "$_\" } | Select-Object -First 1
+      if ($l) { subst $l $d; if (Test-Path -LiteralPath "$l\WSH by Remiz.cmd") { $script:WshDrive = $l } }
+    }
+    if ($script:WshDrive) { $d = "$script:WshDrive\" }   # 연결을 못 하면 그 자리에서 연다(안의 도구만 안 열린다)
+  }
+  try { Start-Process cmd.exe -ArgumentList "/c `"`"$(Join-Path $d 'WSH by Remiz.cmd')`"`"" -Verb RunAs -WorkingDirectory $d }
+  catch { [void][System.Windows.Forms.MessageBox]::Show("WSH 를 띄우지 못했습니다: $($_.Exception.Message)", 'Remiz WSH') }
+}
 $bAll = New-Btn '전체 선택' 12 100 { Set-AllChecked $true }
 $bNone = New-Btn '전체 해제' 118 100 { Set-AllChecked $false }
-# Remiz WSH 도구(방화벽·디펜더·업데이트 등 윈도우 초기 설정)를 그대로 연다 — USB PC설치\도구 의 사용자 도구를 띄우기만 한다
-$bWsh = New-Btn 'Remiz WSH 열기' 300 160 {
-  $p = if ($Usb) { Join-Path (Join-Path $Usb '도구') 'WSH by Remiz.cmd' } else { $null }
-  if ($p -and (Test-Path -LiteralPath $p)) { Start-Process -FilePath $p -Verb RunAs -WorkingDirectory (Split-Path $p) }   # 관리자 권한으로 띄운다
-  else { [void][System.Windows.Forms.MessageBox]::Show("USB 의 PC설치\도구 폴더에 'WSH by Remiz.cmd' 가 없습니다.`r`nRemiz 도구를 그 폴더에 넣어 두세요.", 'Remiz WSH') }
-}
+$bWsh = New-Btn 'Remiz WSH 열기' 300 160 { Open-Wsh }
 $bGo = New-Btn '선택한 것 설치' 604 140 { Start-Worker }
 $bClose = New-Btn '닫기' 752 100 { $form.Close() }
 
