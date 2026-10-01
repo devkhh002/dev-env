@@ -29,7 +29,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/devkhh002/dev-env/main/m
 | clasp · firebase-tools | clasp · firebase-tools |
 | Claude Code | Claude Code |
 | git 기본 설정(줄바꿈 유지·한글 파일명) | git 기본 설정(한글 파일명) |
-| **한/영 전환** — AutoHotkey + `hangul.ahk`(자동 시작) | **한/영 전환** — 구름 입력기 + Shift+Space · Karabiner 원격 규칙 |
+| **한/영 전환** — AutoHotkey + `hangul.ahk`(관리자 권한 자동 시작) | **한/영 전환** — 구름 입력기 + Shift+Space · Karabiner 원격 규칙 |
 | Tailscale · Sunshine(원격 호스트) | Tailscale · Moonlight · Chrome |
 | 프로젝트(`projects.txt`) → `C:\dev` + 바로가기 | 프로젝트(`projects.txt`) → `~/dev` |
 

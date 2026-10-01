@@ -118,8 +118,9 @@ Add-Item gitconfig 'git 기본 설정(줄바꿈 유지·한글 파일명·이름
   git config --global user.name $GitName
   git config --global user.email $GitEmail
 }
-Add-Item hangul '한/영 전환 (AutoHotkey + 10분마다 자동 확인·복구)' {
-  [bool](Get-ScheduledTask -TaskName 'hangul-ahk' -EA 0) -and (Test-Path "$env:ProgramData\hangul.ahk") -and [bool](Get-Process AutoHotkey64 -EA 0)
+Add-Item hangul '한/영 전환 (AutoHotkey 관리자 권한 + 10분마다 자동 확인·복구)' {
+  $t = Get-ScheduledTask -TaskName 'hangul-ahk' -EA 0
+  [bool]$t -and ($t.Principal.RunLevel -eq 'Highest') -and (Test-Path "$env:ProgramData\hangul.ahk") -and [bool](Get-Process AutoHotkey64 -EA 0)
 } {
   $exe = "$env:ProgramFiles\AutoHotkey\v2\AutoHotkey64.exe"
   if (-not (Test-Path $exe)) { Start-Process (Fetch 'https://www.autohotkey.com/download/ahk-v2.exe' 'ahk-v2.exe') -Wait -ArgumentList '/silent' }
@@ -128,24 +129,30 @@ Add-Item hangul '한/영 전환 (AutoHotkey + 10분마다 자동 확인·복구)
   # 옛 방식(시작 폴더) 정리 — 예약 작업이 대신한다
   $s = [Environment]::GetFolderPath('CommonStartup')
   Remove-Item "$s\hangul.ahk", "$s\hangul.lnk" -Force -EA 0
+  # 떠 있는 것(예전 일반 권한 실행분 포함)은 끈다 — #SingleInstance Ignore 라 그대로 두면 새로 띄운 쪽이 빠진다
+  Stop-ScheduledTask -TaskName 'hangul-ahk' -EA 0
+  Get-CimInstance Win32_Process -Filter "Name LIKE 'AutoHotkey%'" | Where-Object CommandLine -like '*hangul.ahk*' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -EA 0 }
 
   # 로그인할 때 + 10분마다: 스크립트가 죽어 있으면 다시 띄운다 (#SingleInstance Ignore 라 중복 안 뜬다)
+  # 관리자 권한(Highest)으로 띄운다 — 일반 권한이면 관리자 창(관리자 PowerShell·VirtualBox 등)에 한/영 키를 못 보낸다(UIPI)
   $user = "$env:USERDOMAIN\$env:USERNAME"
   Unregister-ScheduledTask -TaskName 'hangul-ahk' -Confirm:$false -EA 0
   $act = New-ScheduledTaskAction -Execute $exe -Argument "`"$ahk`""
   $t1 = New-ScheduledTaskTrigger -AtLogOn -User $user
   $t2 = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 10) -RepetitionDuration (New-TimeSpan -Days 3650)
-  $pr = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+  $pr = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
   $st = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero)
   Register-ScheduledTask -TaskName 'hangul-ahk' -Action $act -Trigger $t1, $t2 -Principal $pr -Settings $st -Description '원격 한/영 전환 스크립트 실행·감시' | Out-Null
   Start-ScheduledTask -TaskName 'hangul-ahk'
 
-  # 바탕화면: 이상할 때 두 번 누르면 즉시 복구
+  # 바탕화면: 이상할 때 두 번 누르면 즉시 복구 — 예약 작업을 껐다 켠다(직접 띄우면 일반 권한이 돼서 관리자 창에서 안 된다)
   $ws = New-Object -ComObject WScript.Shell
   $lnk = $ws.CreateShortcut(([Environment]::GetFolderPath('Desktop')) + '\한영 다시 시작.lnk')
-  $lnk.TargetPath = $exe
-  $lnk.Arguments = "`"$ahk`""
+  $lnk.TargetPath = "$env:SystemRoot\System32\cmd.exe"
+  $lnk.Arguments = '/c schtasks /end /tn hangul-ahk & schtasks /run /tn hangul-ahk'
   $lnk.WorkingDirectory = $env:ProgramData
+  $lnk.IconLocation = "$exe,0"
+  $lnk.WindowStyle = 7
   $lnk.Save()
 }
 Add-Item tailscale 'Tailscale (원격 접속 VPN)' { Test-Path "$env:ProgramFiles\Tailscale\tailscale.exe" } {
