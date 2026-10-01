@@ -58,7 +58,10 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/devkhh002/dev-env/main/m
 
 - 아이디 찾기: PowerShell 에서 `winget search 이름` · 버전 고정: `winget:아이디@버전`
 - winget 에 없는 것: 파일을 USB `PC설치\도구` 에 넣고 `usb:파일이름`
-- winget 이 다운로드 주소를 못 찾으면(404) 설치 화면에 이유가 나온다 — 며칠 뒤 다시 하거나 `usb:` 로 바꾼다
+- winget 목록이 늦어 다운로드 주소가 없어지면(404) 설치 화면에 이유가 나온다 — 며칠 뒤 다시 하거나, 공식 주소로 바꾼다
+  - `url:주소` — 늘 같은 주소가 최신판인 곳(팟플레이어)
+  - `latest:페이지 파일이름` — 그 페이지에서 파일 이름(`*` 가능)이 맞는 링크 중 번호가 가장 큰 것(HWiNFO: `latest:https://www.sac.sk/files.php?d=13&l=H hwi_*x.exe`)
+  - 조용히 설치하는 옵션(NSIS `/S` · Inno Setup `/VERYSILENT`)은 알아서 고르고, 서명이 없거나 깨진 설치 파일은 실행하지 않는다
 
 **네트워크 드라이버** — 새 기종이면 랜(필요하면 Wi-Fi) 드라이버를 `.inf` 가 든 폴더째 USB `PC설치\네트워크 드라이버` 에 넣는다. 맞지 않는 PC 에서는 자동으로 건너뛴다.
 

@@ -72,6 +72,8 @@ function Fetch($url, $name, [long]$size = 0) {
   return $p
 }
 function Msi($p) { Start-Process msiexec -Wait -ArgumentList "/i `"$p`" /qn /norestart" }
+# 설치 프로그램을 실행하고 '그 프로그램만' 끝나기를 기다린다 — Start-Process -Wait 는 설치가 끝나며 띄운 앱(HWiNFO 등)이 꺼질 때까지 기다려 멈춘 것처럼 된다
+function Start-Wait($file, [string]$argList) { $a = @{ FilePath = $file; PassThru = $true }; if ($argList) { $a.ArgumentList = $argList }; (Start-Process @a).WaitForExit() }
 function Has($cmd) { Refresh-Path; return [bool](Get-Command $cmd -EA 0) }
 function Q($s) { "'" + ([string]$s -replace "'", "''") + "'" }
 # 진행 기록: 설치 화면이 이 파일을 읽어 보여 준다(@@ 줄은 화면용 표시)
@@ -184,7 +186,7 @@ function Install-WingetPkg($id, $ver, $source) {
   }
   $hex = '0x{0:X8}' -f $code
   $why = switch ($hex) {
-    '0x80190194' { '다운로드 주소가 없어졌다(404) — winget 목록이 아직 안 고쳐졌다. 며칠 뒤 다시 하거나 catalog.txt 에서 usb: 로 바꾼다' }
+    '0x80190194' { '다운로드 주소가 없어졌다(404) — winget 목록이 아직 안 고쳐졌다. 며칠 뒤 다시 하거나 catalog.txt 에서 공식 주소(url:·latest:)로 바꾼다' }
     '0x8A150014' { 'winget 에서 그 아이디를 찾지 못했다 — catalog.txt 의 아이디 확인 (winget search 이름)' }
     default { '검은 진행 창의 winget 메시지를 본다' }
   }
@@ -194,12 +196,34 @@ function Install-WingetPkg($id, $ver, $source) {
 $ArpKeys = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
 function Test-Arp($name) { [bool](Get-ItemProperty $ArpKeys -EA 0 | Where-Object { $_.DisplayName -and $_.DisplayName -like "*$name*" }) }
 function Test-ArpExact($name) { [bool](Get-ItemProperty $ArpKeys -EA 0 | Where-Object { $_.DisplayName -eq $name }) }
-# 링크에서 받아 바로 설치(늘 최신판). PotPlayer 등 NSIS 설치본은 /S 가 조용히 설치
+# 링크에서 받아 바로 설치(늘 최신판) — 조용히 설치하는 옵션은 설치본 종류에 맞춘다: Inno Setup(HWiNFO 등) /VERYSILENT · 그 밖(NSIS: PotPlayer 등) /S
+# 서명이 아예 없거나 깨진 파일은 실행하지 않는다(받는 곳에서 바꿔치기됐을 때)
 function Install-UrlApp($url, $name) {
   $leaf = ($url -split '[/?#]' | Where-Object { $_ }) | Select-Object -Last 1
   if ($leaf -notmatch '\.(exe|msi)$') { $leaf = "$name.exe" }
   $p = Fetch $url $leaf
-  if ($leaf -match '\.msi$') { Msi $p } else { Start-Process $p -Wait -ArgumentList '/S' }
+  $sig = (Get-AuthenticodeSignature $p).Status
+  if ($sig -in 'NotSigned', 'HashMismatch') { Remove-Item $p -Force; throw "서명이 없거나 깨진 설치 파일이라 실행하지 않았습니다($sig): $url" }
+  if ($leaf -match '\.msi$') { Start-Wait msiexec "/i `"$p`" /qn /norestart"; return }
+  $inno = [Diagnostics.FileVersionInfo]::GetVersionInfo($p).Comments -like '*Inno Setup*'
+  Start-Wait $p $(if ($inno) { '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' } else { '/S' })
+}
+# 공식 페이지에서 가장 새 파일을 찾아 설치 — 파일 이름이 패턴(*)에 맞는 링크 중 번호가 가장 큰 것
+# (새 판이 나오면 예전 파일을 바로 지우는 곳은 winget 목록이 따라올 때까지 404 가 난다: HWiNFO)
+function Find-LatestLink($page, $pattern) {
+  $html = (Invoke-WebRequest $page -UseBasicParsing -TimeoutSec 30 -UserAgent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)').Content
+  $links = foreach ($m in [regex]::Matches($html, 'href\s*=\s*["'']([^"''>]+)')) {
+    try { $u = [Uri]::new([Uri]$page, [Net.WebUtility]::HtmlDecode($m.Groups[1].Value)) } catch { continue }
+    if ([IO.Path]::GetFileName($u.AbsolutePath) -like $pattern) { $u.AbsoluteUri }
+  }
+  $links | Sort-Object { [regex]::Replace($_, '\d+', { param($d) $d.Value.PadLeft(12, '0') }) } | Select-Object -Last 1
+}
+function Install-LatestApp($spec, $name) {
+  $page, $pattern = $spec -split '\s+', 2
+  $url = Find-LatestLink $page $pattern
+  if (-not $url) { throw "공식 페이지에서 '$pattern' 파일을 찾지 못했습니다 — 페이지가 바뀌었으면 catalog.txt 를 고친다: $page" }
+  Say "   가장 새 파일: $url"
+  Install-UrlApp $url $name
 }
 # winget 밖에서 깐 앱은 winget 목록에 안 잡힐 수 있다(예: Chrome) — 제어판 이름이나 스토어 앱 이름으로 한 번 더 본다
 function Test-Hint($hint, $name) {
@@ -215,8 +239,8 @@ function Install-UsbTool($name, $file) {
   if (-not (Test-Path -LiteralPath $p)) { Say "   USB 에 파일이 없습니다: $p" Yellow; return }
   switch ([IO.Path]::GetExtension($p).ToLower()) {
     '.zip' { Expand-Archive -LiteralPath $p "C:\Tools\$name" -Force }
-    '.msi' { Start-Process msiexec -Wait -ArgumentList "/i `"$p`"" }
-    default { Start-Process -FilePath $p -Wait }
+    '.msi' { Start-Wait msiexec "/i `"$p`"" }
+    default { Start-Wait $p }
   }
 }
 # 전원 설정의 현재 AC 값(초) — powercfg 출력의 마지막 두 16진수가 AC·DC
@@ -297,9 +321,11 @@ function Add-CatalogItem($e) {
       $ins = "Install-UsbTool $(Q $e.Name) $(Q $spec)"
     }
     'url' { $chk = "Test-Hint $(Q $e.Hint) $(Q $e.Name)"; $ins = "Install-UrlApp $(Q $spec) $(Q $e.Name)" }
+    'latest' { $chk = "Test-Hint $(Q $e.Hint) $(Q $e.Name)"; $ins = "Install-LatestApp $(Q $spec) $(Q $e.Name)" }
     default { return }
   }
-  Add-Item $grp "app:$($e.Name)" $e.Name ([scriptblock]::Create($chk)) ([scriptblock]::Create($ins)) -Off:(-not $e.On) -Kind $(if ($kind -eq 'usb') { 'usb' } else { 'winget' })
+  # winget·스토어 앱만 winget 이 먼저 있어야 한다 (url·latest 는 winget 없이 받는다)
+  Add-Item $grp "app:$($e.Name)" $e.Name ([scriptblock]::Create($chk)) ([scriptblock]::Create($ins)) -Off:(-not $e.On) -Kind $(if ($kind -eq 'usb') { 'usb' } elseif ($kind -in 'winget', 'msstore') { 'winget' } else { '' })
 }
 foreach ($e in $Catalog | Where-Object Group -ne '개발 환경') { Add-CatalogItem $e }
 
