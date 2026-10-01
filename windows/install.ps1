@@ -8,10 +8,15 @@ $ProgressPreference = 'SilentlyContinue'
 $raw = 'https://raw.githubusercontent.com/devkhh002/dev-env/main'
 $t = Join-Path $env:TEMP 'dev-env'
 Remove-Item $t -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory "$t\windows" -Force | Out-Null
-foreach ($f in 'windows/setup.ps1', 'windows/hangul.ahk', 'projects.txt') {
+# Every file setup.ps1 reads — when a file is added under claude/, add it here too (and in mac/install.sh)
+$files = 'windows/setup.ps1', 'windows/hangul.ahk', 'projects.txt',
+  'claude/CLAUDE.md', 'claude/statusline.sh', 'claude/agents/deep-reasoner.md', 'claude/agents/runner.md',
+  'claude/commands/orchestra.md', 'claude/fable/fable.md'
+foreach ($f in $files) {
   Write-Host "download $f"
-  Invoke-WebRequest "$raw/$f" -OutFile (Join-Path $t ($f -replace '/', '\')) -UseBasicParsing
+  $out = Join-Path $t ($f -replace '/', '\')
+  New-Item -ItemType Directory (Split-Path $out) -Force | Out-Null
+  Invoke-WebRequest "$raw/$f" -OutFile $out -UseBasicParsing
 }
 $setup = Join-Path $t 'windows\setup.ps1'
 Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$setup`"")
