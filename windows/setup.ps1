@@ -49,12 +49,15 @@ if (-not $isAdmin -and -not $List -and -not $Snapshot) {
 # 선택 항목은 명령줄 대신 파일로 받는다 — 한글·공백이 든 Id 가 프로세스 사이에서 깨지지 않게
 if ($OnlyFile -and (Test-Path -LiteralPath $OnlyFile)) { $Only = @(Get-Content -LiteralPath $OnlyFile -Encoding UTF8 | Where-Object { $_ -match '\S' }) }
 
-$Tmp = "$env:TEMP\dev-env-dl"; New-Item -ItemType Directory $Tmp -Force | Out-Null
+# 예전 판(dev-env-dl)이 멈추며 남긴 받다 만 파일을 보지 않도록 폴더 이름을 바꿨다
+$Tmp = "$env:TEMP\dev-env-cache"; New-Item -ItemType Directory $Tmp -Force | Out-Null
 function Refresh-Path { $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User') + ";$env:APPDATA\npm;$env:USERPROFILE\.local\bin" }
 # 큰 파일도 빨리 받게 Windows 내장 curl.exe 를 쓴다(PowerShell 5.1 의 Invoke-WebRequest 는 큰 파일에서 매우 느려 멈춘 것처럼 보인다).
 # .part 로 받다가 다 받으면 이름을 바꾼다 — 중간에 끊긴 파일을 다 받은 것으로 착각하지 않게. 진행률은 검은 진행 창에 보인다
-function Fetch($url, $name) {
+function Fetch($url, $name, [long]$size = 0) {
   $p = "$Tmp\$name"
+  # 크기를 아는 파일(GitHub 릴리스)은 대조 — 받다 만 파일이면 지우고 다시 받는다
+  if ((Test-Path $p) -and $size -gt 0 -and (Get-Item $p).Length -ne $size) { Say "   받다 만 파일이라 다시 받습니다: $name"; Remove-Item $p -Force }
   if (Test-Path $p) { return $p }
   $part = "$p.part"; Remove-Item $part -EA 0
   Say "   받는 중: $name  (진행률은 검은 진행 창에)"
@@ -103,7 +106,7 @@ function Test-Winget { Refresh-Path; [bool](Get-Command winget -EA 0) }
 function Install-Winget {
   Say '   winget 설치 1/3: GitHub 에서 설치 파일을 받습니다(합쳐서 약 300MB — 몇 분 걸릴 수 있다)'
   $rel = Invoke-RestMethod 'https://api.github.com/repos/microsoft/winget-cli/releases/latest' -Headers @{ 'User-Agent' = 'dev-env' }
-  $get = { param($like) $f = $rel.assets | Where-Object { $_.name -like $like } | Select-Object -First 1; Fetch $f.browser_download_url $f.name }
+  $get = { param($like) $f = $rel.assets | Where-Object { $_.name -like $like } | Select-Object -First 1; Fetch $f.browser_download_url $f.name $f.size }
   $bundle = & $get 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle'
   $depZip = & $get 'DesktopAppInstaller_Dependencies.zip'
   $lic = & $get '*License1.xml'
@@ -425,8 +428,10 @@ foreach ($line in $projLines) {
 }
 
 # 관리
+$UsbKitFiles = [ordered]@{ 'start.ps1' = 'start.ps1'; 'start.cmd' = '시작하기.cmd'; 'README.txt' = '읽어보기.txt' }   # 저장소 usb\ 이름 → USB 이름
 Add-Item $G9 usbkit 'USB 시작하기 만들기·갱신 (Ventoy USB 에 PC설치 폴더)' {
-  $k = Find-UsbKit; [bool]$k -and ((Get-FileHash -LiteralPath "$k\start.ps1").Hash -eq (Get-FileHash "$PSScriptRoot\usb\start.ps1").Hash)
+  $k = Find-UsbKit
+  [bool]$k -and -not ($UsbKitFiles.Keys | Where-Object { -not (Test-Path -LiteralPath "$k\$($UsbKitFiles[$_])") -or (Get-FileHash -LiteralPath "$k\$($UsbKitFiles[$_])").Hash -ne (Get-FileHash "$PSScriptRoot\usb\$_").Hash })
 } {
   $k = Find-UsbKit
   if (-not $k) {
@@ -435,9 +440,7 @@ Add-Item $G9 usbkit 'USB 시작하기 만들기·갱신 (Ventoy USB 에 PC설치
     $k = "$($v.DriveLetter):\PC설치"
   }
   New-Item -ItemType Directory "$k\네트워크 드라이버", "$k\도구" -Force | Out-Null
-  Copy-Item "$PSScriptRoot\usb\start.ps1" "$k\start.ps1" -Force
-  Copy-Item "$PSScriptRoot\usb\start.cmd" "$k\시작하기.cmd" -Force
-  Copy-Item "$PSScriptRoot\usb\README.txt" "$k\읽어보기.txt" -Force
+  foreach ($src in $UsbKitFiles.Keys) { Copy-Item "$PSScriptRoot\usb\$src" "$k\$($UsbKitFiles[$src])" -Force }
   Say "   $k 에 만들었습니다 — 기종마다 랜 드라이버 폴더를 '네트워크 드라이버' 에 넣어 두세요"
 } -Off
 
