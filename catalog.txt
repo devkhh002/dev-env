@@ -15,7 +15,6 @@
 기본 앱 | 팟플레이어 64비트 | url:https://t1.daumcdn.net/potplayer/PotPlayer/Version/Latest/PotPlayerSetup64.exe | on | file:C:\Program Files\DAUM\PotPlayer\PotPlayer64.exe
 원격 | Chrome 원격 데스크톱 호스트 | winget:Google.ChromeRemoteDesktopHost | on | arp:Chrome Remote Desktop Host
 도구 | 유니콘 HTTPS | winget:UnicornSoft.UnicornHTTPS | on
-도구 | TrafficMonitor | winget:zhongyang219.TrafficMonitor.Full | on
 도구 | HWiNFO | winget:REALiX.HWiNFO | on
 도구 | CPU-Z (MSI판) | winget:CPUID.CPU-Z.MSI | on | arp:CPU-Z MSI
 도구 | 스티커 메모 | msstore:9NBLGGH4QGHW | on | appx:Microsoft.MicrosoftStickyNotes

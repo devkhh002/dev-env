@@ -3,6 +3,7 @@ windows/setup.ps1
 windows/version.txt
 windows/files.txt
 windows/hangul.ahk
+windows/trafficmonitor/config.ini
 windows/usb/start.ps1
 windows/usb/start.cmd
 windows/usb/README.txt

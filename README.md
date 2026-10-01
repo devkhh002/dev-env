@@ -35,7 +35,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/devkhh002/dev-env/main/m
 |---|---|
 | ① 인터넷 | 네트워크 드라이버(USB `PC설치\네트워크 드라이버`) — 인터넷이 이미 되면 건드리지 않는다(원격 연결이 끊기지 않게) |
 | ② Windows 설정 | 전원 고성능·절전 안 함 · 최대 절전 끄기 · 알림 끄기 · SSD 최적화(SysMain·검색 끄기) · 진단 데이터 최소화 · 키보드 유형 3(Shift+Space 한/영) · 옛 우클릭 메뉴(선택) |
-| ④ 도구·앱 | winget · `catalog.txt` 의 앱(Chrome·웨일·반디집·크롬 원격 호스트·유니콘 HTTPS·TrafficMonitor·HWiNFO·CPU-Z·스티커 메모·Claude 앱 …) · **한/영 전환**(AutoHotkey 관리자 권한) · Tailscale · Sunshine |
+| ④ 도구·앱 | winget · `catalog.txt` 의 앱(Chrome·웨일·반디집·팟플레이어 32·64비트·크롬 원격 호스트·유니콘 HTTPS·HWiNFO·CPU-Z·스티커 메모·Claude 앱 …) · **TrafficMonitor**(공식 최신판 + 저장소 설정 `windows/trafficmonitor/config.ini` → 작업 표시줄 표시, 로그인할 때 관리자 권한 예약 작업으로 자동 실행) · 반디집 광고 차단(hosts) · **한/영 전환**(AutoHotkey 관리자 권한) · Tailscale · Sunshine |
 | ⑤ 개발 환경 | Git · Node.js 24 · Python 3.13 · GitHub CLI · PowerShell 7 · Windows Terminal(Ctrl+C/V) · clasp·firebase · Claude Code · Claude 설정 · git 설정 · VirtualBox 7.2.14 |
 | ⑥ 개발 소스 | `projects.txt` 의 프로젝트 → `C:\dev` + 바로가기 (GitHub 로그인이라 기본 체크 해제) |
 | 관리 | USB 시작하기 만들기·갱신 |

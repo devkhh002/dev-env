@@ -303,6 +303,63 @@ function Add-CatalogItem($e) {
 }
 foreach ($e in $Catalog | Where-Object Group -ne '개발 환경') { Add-CatalogItem $e }
 
+# TrafficMonitor — 공식 GitHub 최신판을 C:\Tools\TrafficMonitor 에 깔고, 지금 쓰는 설정(작업 표시줄에 속도 표시)을 넣고, 로그인할 때 자동 실행
+# (winget 판은 설정 없이 기본값이라 작업 표시줄에 안 나오고 자동 실행도 안 된다)
+# 이 프로그램은 실행 파일이 '관리자로만 실행'(requireAdministrator) 이라 시작 프로그램 폴더·Run 으로는 로그인 때 막히거나 묻는다
+# → TrafficMonitor 가 스스로 쓰는 것과 같은 예약 작업(\TrafficMonitor\Autorun for 사용자, 가장 높은 권한)으로 띄운다. 옵션 창의 '자동 실행' 도 켜진 것으로 보인다
+$TmDir = 'C:\Tools\TrafficMonitor'
+$TmTask = "Autorun for $env:USERNAME"
+function Test-TmTask { $t = Get-ScheduledTask -TaskPath '\TrafficMonitor\' -TaskName $TmTask -EA 0; [bool]$t -and $t.Actions[0].Execute -eq "$TmDir\TrafficMonitor.exe" -and $t.Principal.RunLevel -eq 'Highest' }
+Add-Item "$G4/도구" trafficmonitor 'TrafficMonitor — 작업 표시줄에 속도 표시 · 로그인할 때 자동 실행 (공식 최신판)' {
+  (Test-Path "$TmDir\TrafficMonitor.exe") -and (Test-TmTask) -and [bool]((Get-Content "$TmDir\config.ini" -EA 0) -match '^\s*show_task_bar_wnd\s*=\s*true')
+} {
+  $rel = Invoke-RestMethod 'https://api.github.com/repos/zhongyang219/TrafficMonitor/releases/latest' -Headers @{ 'User-Agent' = 'dev-env' }
+  $a = $rel.assets | Where-Object { $_.name -match '_x64\.zip$' } | Select-Object -First 1   # Lite 가 아닌 전체판
+  $zip = Fetch $a.browser_download_url $a.name $a.size
+  # 설정·사용 기록: 이미 깐 곳 → 예전에 쓰던 다운로드 폴더 → 저장소 기본 설정 순으로 가져온다
+  $from = @($TmDir, "$env:USERPROFILE\Downloads\TrafficMonitor") | Where-Object { Test-Path "$_\config.ini" } | Select-Object -First 1
+  $keep = "$Tmp\tm-keep"; Remove-Item $keep -Recurse -Force -EA 0; New-Item -ItemType Directory $keep -Force | Out-Null
+  if ($from) { Copy-Item "$from\config.ini", "$from\history_traffic.dat" $keep -Force -EA 0; Say "   설정을 가져옵니다: $from" }
+  else { Copy-Item "$PSScriptRoot\trafficmonitor\config.ini" $keep -Force; Say '   저장소의 기본 설정(작업 표시줄 표시)을 넣습니다' }
+  Get-Process TrafficMonitor -EA 0 | Stop-Process -Force; Start-Sleep 1   # 파일을 바꾸려면 꺼야 한다
+  # 예전 설치 목록이 winget 으로 깐 TrafficMonitor(설정 없는 판)는 지운다 — 두 벌이 되지 않게
+  # (winget 은 '사용자 범위로 깐 것은 관리자 창에서 못 지운다' 며 거절한다 → winget 이 깔 때 만든 폴더·PATH·제어판 항목을 직접 지운다)
+  foreach ($k in Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -EA 0 | Where-Object PSChildName -like 'zhongyang219.TrafficMonitor*') {
+    $loc = (Get-ItemProperty $k.PSPath).InstallLocation
+    if ($loc -like "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\*") {
+      Remove-Item $loc -Recurse -Force -EA 0
+      $up = [Environment]::GetEnvironmentVariable('Path', 'User')
+      if ($up -and $up.IndexOf($loc, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        [Environment]::SetEnvironmentVariable('Path', (($up -split ';' | Where-Object { $_ -and -not $_.StartsWith($loc, [StringComparison]::OrdinalIgnoreCase) }) -join ';'), 'User')
+      }
+    }
+    Remove-Item $k.PSPath -Recurse -Force
+    Say '   예전에 winget 으로 깐 TrafficMonitor 를 지웠습니다'
+  }
+  $x = "$Tmp\tm-zip"; Remove-Item $x -Recurse -Force -EA 0
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [IO.Compression.ZipFile]::ExtractToDirectory($zip, $x)
+  $src = (Get-ChildItem $x -Recurse -Filter TrafficMonitor.exe | Select-Object -First 1).DirectoryName
+  New-Item -ItemType Directory $TmDir -Force | Out-Null
+  Copy-Item "$src\*" $TmDir -Recurse -Force
+  Copy-Item "$keep\*" $TmDir -Force
+  [IO.File]::WriteAllText("$TmDir\global_cfg.ini", "[config]`r`nportable_mode = true`r`n", [Text.Encoding]::ASCII)
+  # 옛 자동 실행(시작 프로그램 바로가기·Run)은 지운다 — 예약 작업과 겹치면 두 번 떠서 '이미 실행 중' 창이 뜬다
+  $st = [Environment]::GetFolderPath('Startup'); $ws = New-Object -ComObject WScript.Shell
+  Get-ChildItem $st -Filter '*.lnk' -EA 0 | Where-Object { $ws.CreateShortcut($_.FullName).TargetPath -like '*\TrafficMonitor.exe' } | Remove-Item -Force
+  Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name TrafficMonitor -EA 0
+  # 로그인할 때 자동 실행 — TrafficMonitor 자기 설정과 같게(3초 뒤, 시간 제한 없음, 배터리여도 실행)
+  $user = "$env:USERDOMAIN\$env:USERNAME"
+  $act = New-ScheduledTaskAction -Execute "$TmDir\TrafficMonitor.exe"
+  $tr = New-ScheduledTaskTrigger -AtLogOn -User $user; $tr.Delay = 'PT3S'
+  $pr = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
+  $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero)
+  Register-ScheduledTask -TaskPath '\TrafficMonitor\' -TaskName $TmTask -Action $act -Trigger $tr -Principal $pr -Settings $set -Force | Out-Null
+  # 바로 띄운다 — 로그인 때와 똑같이 그 작업으로
+  Start-ScheduledTask -TaskPath '\TrafficMonitor\' -TaskName $TmTask
+  Start-Sleep 3
+}
+
 # 반디집 무료판의 광고·분석·알림·업데이트 확인을 hosts 로 막는다 — 방화벽이 꺼져 있어도 동작한다
 # (주소는 반디집 파일 안에 적힌 것에서 뽑았다. 반디소프트 자기 주소만 — 구글 광고 주소는 브라우저까지 망가뜨려 두지 않는다)
 $HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
