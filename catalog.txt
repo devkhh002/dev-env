@@ -5,12 +5,14 @@
 #             winget:아이디@버전   — 그 버전으로 고정 (모두 최신으로 에서도 안 올라간다)
 #             msstore:아이디       — Microsoft Store 앱
 #             usb:파일이름         — USB 의 PC설치\도구 폴더에 넣은 파일 (.zip 은 C:\Tools\이름 에 풀고, .exe·.msi 는 실행)
+#             url:주소             — 그 주소에서 받아 바로 설치 (늘 최신판. NSIS 설치본은 /S 로 조용히)  ※ 확인 이름 칸 필수
 #   확인 이름: winget 밖에서 깐 앱이 '설치됨' 으로 안 보일 때만 쓴다
-#             arp:제어판 프로그램 이름 일부   ·   appx:스토어 앱 패키지 이름      (비우면 '이름' 으로 제어판을 찾는다)
+#             arp:제어판 이름 일부 · arp=정확한 이름 · appx:스토어 패키지 이름 · file:설치 파일 경로(제어판에 안 올라오는 앱)   (비우면 '이름' 으로 제어판을 찾는다)
 기본 앱 | Chrome | winget:Google.Chrome | on | arp:Google Chrome
 기본 앱 | 네이버 웨일 | winget:NAVER.Whale | on
 기본 앱 | 반디집 | winget:Bandisoft.Bandizip | on
-기본 앱 | PotPlayer | winget:Daum.PotPlayer | off
+기본 앱 | 팟플레이어 32비트 | url:https://t1.daumcdn.net/potplayer/PotPlayer/Version/Latest/PotPlayerSetup.exe | on | file:C:\Program Files (x86)\DAUM\PotPlayer\PotPlayer.exe
+기본 앱 | 팟플레이어 64비트 | url:https://t1.daumcdn.net/potplayer/PotPlayer/Version/Latest/PotPlayerSetup64.exe | on | file:C:\Program Files\DAUM\PotPlayer\PotPlayer64.exe
 원격 | Chrome 원격 데스크톱 호스트 | winget:Google.ChromeRemoteDesktopHost | on
 도구 | 유니콘 HTTPS | winget:UnicornSoft.UnicornHTTPS | on
 도구 | TrafficMonitor | winget:zhongyang219.TrafficMonitor.Full | on

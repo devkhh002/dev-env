@@ -7,7 +7,7 @@
 # 앱·도구 목록은 저장소의 catalog.txt, 프로젝트는 projects.txt — 그 파일만 고치면 모든 PC 의 설치 화면에 반영된다.
 # -Usb  : USB 의 PC설치 폴더(시작하기가 넘겨준다. 없으면 드라이브를 찾아본다)
 # -Progress·-NoPause : 설치 화면이 설치 창(일꾼)에 넘기는 것.  -Snapshot : 화면을 그림으로 저장(시험용)
-param([switch]$All, [string[]]$Only, [switch]$List, [switch]$NoPause, [string]$Progress, [string]$Usb, [string]$Snapshot)
+param([switch]$All, [string[]]$Only, [string]$OnlyFile, [switch]$List, [switch]$NoPause, [string]$Progress, [string]$Usb, [string]$Snapshot)
 
 # ── 버전(올릴 때는 여기만) ───────────────────────────────────────────
 $V = @{
@@ -42,9 +42,12 @@ if (-not $isAdmin -and -not $List -and -not $Snapshot) {
   if ($NoPause) { $a += '-NoPause' }
   if ($Progress) { $a += '-Progress'; $a += "`"$Progress`"" }
   if ($Usb) { $a += '-Usb'; $a += "`"$Usb`"" }
+  if ($OnlyFile) { $a += '-OnlyFile'; $a += "`"$OnlyFile`"" }
   Start-Process powershell -Verb RunAs -ArgumentList $a
   return
 }
+# 선택 항목은 명령줄 대신 파일로 받는다 — 한글·공백이 든 Id 가 프로세스 사이에서 깨지지 않게
+if ($OnlyFile -and (Test-Path -LiteralPath $OnlyFile)) { $Only = @(Get-Content -LiteralPath $OnlyFile -Encoding UTF8 | Where-Object { $_ -match '\S' }) }
 
 $Tmp = "$env:TEMP\dev-env-dl"; New-Item -ItemType Directory $Tmp -Force | Out-Null
 function Refresh-Path { $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User') + ";$env:APPDATA\npm;$env:USERPROFILE\.local\bin" }
@@ -137,13 +140,21 @@ function Install-WingetPkg($id, $ver, $source) {
   Say "   winget 실패 $hex — $why" Yellow
 }
 # USB 도구(catalog 의 usb:) — .zip 은 C:\Tools\이름 에 풀고, .exe·.msi 는 실행(설치 창은 사람이 넘긴다)
-function Test-Arp($name) {
-  $k = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
-  [bool](Get-ItemProperty $k -EA 0 | Where-Object { $_.DisplayName -and $_.DisplayName -like "*$name*" })
+$ArpKeys = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+function Test-Arp($name) { [bool](Get-ItemProperty $ArpKeys -EA 0 | Where-Object { $_.DisplayName -and $_.DisplayName -like "*$name*" }) }
+function Test-ArpExact($name) { [bool](Get-ItemProperty $ArpKeys -EA 0 | Where-Object { $_.DisplayName -eq $name }) }
+# 링크에서 받아 바로 설치(늘 최신판). PotPlayer 등 NSIS 설치본은 /S 가 조용히 설치
+function Install-UrlApp($url, $name) {
+  $leaf = ($url -split '[/?#]' | Where-Object { $_ }) | Select-Object -Last 1
+  if ($leaf -notmatch '\.(exe|msi)$') { $leaf = "$name.exe" }
+  $p = Fetch $url $leaf
+  if ($leaf -match '\.msi$') { Msi $p } else { Start-Process $p -Wait -ArgumentList '/S' }
 }
 # winget 밖에서 깐 앱은 winget 목록에 안 잡힐 수 있다(예: Chrome) — 제어판 이름이나 스토어 앱 이름으로 한 번 더 본다
 function Test-Hint($hint, $name) {
   if ($hint -like 'appx:*') { return [bool](Get-AppxPackage -Name $hint.Substring(5) -EA 0) }
+  if ($hint -like 'file:*') { return Test-Path -LiteralPath $hint.Substring(5) }   # 설치 파일 경로로 확인 (제어판에 안 올라오는 앱: 팟플 등)
+  if ($hint -like 'arp=*') { return Test-ArpExact $hint.Substring(4) }   # 이름이 정확히 같을 때만 (예: 32/64 구분)
   if ($hint -like 'arp:*') { return Test-Arp $hint.Substring(4) }
   return Test-Arp $name
 }
@@ -234,6 +245,7 @@ function Add-CatalogItem($e) {
       $chk = if ($spec -like '*.zip') { "Test-Path -LiteralPath $(Q "C:\Tools\$($e.Name)")" } else { "Test-Arp $(Q $e.Name)" }
       $ins = "Install-UsbTool $(Q $e.Name) $(Q $spec)"
     }
+    'url' { $chk = "Test-Hint $(Q $e.Hint) $(Q $e.Name)"; $ins = "Install-UrlApp $(Q $spec) $(Q $e.Name)" }
     default { return }
   }
   Add-Item $grp "app:$($e.Name)" $e.Name ([scriptblock]::Create($chk)) ([scriptblock]::Create($ins)) -Off:(-not $e.On) -Kind $(if ($kind -eq 'usb') { 'usb' } else { 'winget' })
@@ -537,7 +549,9 @@ function Start-Worker {
   $script:Prog = Join-Path $env:TEMP "dev-env-progress-$PID.log"
   [IO.File]::WriteAllText($script:Prog, '')
   $script:Pos = 0; $script:RebootList = @()
-  $a = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Only', "`"$(($sel | ForEach-Object Id) -join ',')`"", '-NoPause', '-Progress', "`"$script:Prog`"")
+  $onlyFile = Join-Path $env:TEMP "dev-env-only-$PID.txt"
+  [IO.File]::WriteAllLines($onlyFile, @($sel | ForEach-Object Id), (New-Object Text.UTF8Encoding $false))
+  $a = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-OnlyFile', "`"$onlyFile`"", '-NoPause', '-Progress', "`"$script:Prog`"")
   if ($Usb) { $a += @('-Usb', "`"$Usb`"") }
   $log.AppendText("설치를 시작합니다 — 따로 뜨는 검은 진행 창은 닫지 마세요.`r`n")
   $script:Worker = Start-Process powershell -ArgumentList $a -PassThru
