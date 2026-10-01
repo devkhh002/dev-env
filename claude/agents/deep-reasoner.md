@@ -2,7 +2,7 @@
 name: deep-reasoner
 description: 무거운 추론·시스템 설계·아키텍처 결정·복잡한 근본원인 분석 전담.
   어려운 사고가 필요한 문제만 위임하고 단순 구현에는 쓰지 말 것.
-model: claude-opus-5
+model: opus
 effort: max
 ---
 

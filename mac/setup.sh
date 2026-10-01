@@ -15,7 +15,7 @@ FIREBASE_VER="15.24.0"
 GIT_NAME="Hyunhyo Kim"
 GIT_EMAIL="devkhh002@gmail.com"
 DEV_ROOT="$HOME/dev"
-CLAUDE_MODEL="claude-opus-5-5[1m]"   # Claude Code 기본 모델 (빼려면 "" 로)
+CLAUDE_MODEL="opus[1m]"   # Claude Code 기본 모델 — 별칭이라 새 Opus가 나오면 자동으로 따라간다 (빼려면 "" 로)
 # ────────────────────────────────────────────────────────────────────
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

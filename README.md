@@ -71,16 +71,17 @@ Windows 바로가기는 **시작 위치 칸이 폴더를 정한다**(대상은 `
 
 설치 목록의 **Claude 설정** 항목이 `claude/` 를 `~/.claude/` 로 복사한다(`settings.json`은 덮지 않고 상태 표시줄 설정만 넣는다).
 
-**기본 모델**도 같이 넣는다 — `claude-opus-5-5[1m]`(설치 스크립트 맨 위 `ClaudeModel`/`CLAUDE_MODEL`).
-`/model` 목록에서 Opus 5.5가 비활성으로 보이던 때(2.1.273)의 우회책이다. 목록이 정상이 되면 `~/.claude/settings.json` 의 `"model"` 줄만 지우면 된다.
+**기본 모델**도 같이 넣는다 — `opus[1m]`(설치 스크립트 맨 위 `ClaudeModel`/`CLAUDE_MODEL`).
+버전 번호 대신 별칭이라 새 Opus가 나오면 Claude Code 업데이트와 함께 자동으로 따라간다(2.1.286에서 `claude-opus-5-5[1m]`로 풀리는 것 확인).
+두 보조도 별칭(`opus`·`haiku`)이라, 모델이 바뀌어도 이 저장소를 고칠 일은 없다.
 
 **켜고 끄기는 말로 하면 된다** — Claude에게 "오케스트라 모드 켜줘" / "꺼" / "켜져 있어?".
 입력칸에 `/` 를 치면 나오는 목록의 `/orchestra`(on·off)도 같은 일을 하고, 화면 아래 상태 표시줄에 `🎻 오케스트라 ON` 이 보인다.
 
 | 파일 | 역할 |
 |---|---|
-| `agents/deep-reasoner.md` | 어려운 추론·설계·원인 분석 담당 보조 — Opus 5, effort max |
-| `agents/runner.md` | 명령 실행·검색·로그 확인 잡무 담당 보조 — Haiku 4.5, effort low |
+| `agents/deep-reasoner.md` | 어려운 추론·설계·원인 분석 담당 보조 — 최신 Opus(`opus`), effort max |
+| `agents/runner.md` | 명령 실행·검색·로그 확인 잡무 담당 보조 — 최신 Haiku(`haiku`), effort low |
 | `fable/fable.md` | "직접 하지 말고 두 보조에게 나눠 맡겨라" 지시문 |
 | `CLAUDE.md` | `@~/.claude/fable/active.md` — `active.md`가 있으면 그 내용을 읽는다 |
 

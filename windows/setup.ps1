@@ -21,7 +21,7 @@ $V = @{
 $GitName  = 'Hyunhyo Kim'
 $GitEmail = 'devkhh002@gmail.com'
 $DevRoot  = 'C:\dev'
-$ClaudeModel = 'claude-opus-5-5[1m]'   # Claude Code 기본 모델 (빼려면 '' 로)
+$ClaudeModel = 'opus[1m]'   # Claude Code 기본 모델 — 별칭이라 새 Opus가 나오면 자동으로 따라간다 (빼려면 '' 로)
 # ────────────────────────────────────────────────────────────────────
 
 $ErrorActionPreference = 'Continue'

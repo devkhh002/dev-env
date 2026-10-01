@@ -2,7 +2,7 @@
 name: runner
 description: 판단이 필요 없는 잡무 전담(Haiku). 명령 실행·빌드/테스트·
   파일/로그 확인·검색만 위임하고 코드 로직 변경·설계 판단에는 쓰지 말 것.
-model: claude-haiku-4-5-20251001
+model: haiku
 effort: low
 tools: Bash, Read, Grep, Glob
 ---
