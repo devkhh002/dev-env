@@ -51,7 +51,20 @@ if ($OnlyFile -and (Test-Path -LiteralPath $OnlyFile)) { $Only = @(Get-Content -
 
 $Tmp = "$env:TEMP\dev-env-dl"; New-Item -ItemType Directory $Tmp -Force | Out-Null
 function Refresh-Path { $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User') + ";$env:APPDATA\npm;$env:USERPROFILE\.local\bin" }
-function Fetch($url, $name) { $p = "$Tmp\$name"; if (-not (Test-Path $p)) { Write-Host "   받는 중: $name"; Invoke-WebRequest $url -OutFile $p -UseBasicParsing }; return $p }
+# 큰 파일도 빨리 받게 Windows 내장 curl.exe 를 쓴다(PowerShell 5.1 의 Invoke-WebRequest 는 큰 파일에서 매우 느려 멈춘 것처럼 보인다).
+# .part 로 받다가 다 받으면 이름을 바꾼다 — 중간에 끊긴 파일을 다 받은 것으로 착각하지 않게. 진행률은 검은 진행 창에 보인다
+function Fetch($url, $name) {
+  $p = "$Tmp\$name"
+  if (Test-Path $p) { return $p }
+  $part = "$p.part"; Remove-Item $part -EA 0
+  Say "   받는 중: $name  (진행률은 검은 진행 창에)"
+  $curl = "$env:SystemRoot\System32\curl.exe"
+  if (Test-Path $curl) { & $curl -L --fail --retry 3 --retry-delay 2 -o $part $url; $ok = ($LASTEXITCODE -eq 0) }
+  else { try { (New-Object Net.WebClient).DownloadFile($url, $part); $ok = $true } catch { $ok = $false } }
+  if ($ok -and (Test-Path $part)) { Move-Item $part $p -Force; Say ('   받음: {0} ({1:N0}MB)' -f $name, ((Get-Item $p).Length / 1MB)) }
+  else { Remove-Item $part -EA 0; throw "다운로드 실패: $url" }
+  return $p
+}
 function Msi($p) { Start-Process msiexec -Wait -ArgumentList "/i `"$p`" /qn /norestart" }
 function Has($cmd) { Refresh-Path; return [bool](Get-Command $cmd -EA 0) }
 function Q($s) { "'" + ([string]$s -replace "'", "''") + "'" }
@@ -88,14 +101,24 @@ function Set-WtKeys {
 # winget — LTSC 에는 없어서 GitHub 릴리스(앱 설치 관리자 + 의존 패키지)로 직접 깐다
 function Test-Winget { Refresh-Path; [bool](Get-Command winget -EA 0) }
 function Install-Winget {
-  Say '   winget 설치 파일을 받습니다(약 300MB)'
+  Say '   winget 설치 1/3: GitHub 에서 설치 파일을 받습니다(합쳐서 약 300MB — 몇 분 걸릴 수 있다)'
   $rel = Invoke-RestMethod 'https://api.github.com/repos/microsoft/winget-cli/releases/latest' -Headers @{ 'User-Agent' = 'dev-env' }
   $get = { param($like) $f = $rel.assets | Where-Object { $_.name -like $like } | Select-Object -First 1; Fetch $f.browser_download_url $f.name }
   $bundle = & $get 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle'
   $depZip = & $get 'DesktopAppInstaller_Dependencies.zip'
   $lic = & $get '*License1.xml'
-  Expand-Archive $depZip "$Tmp\wgdeps" -Force
-  $deps = @(Get-ChildItem "$Tmp\wgdeps" -Recurse -Include *.appx, *.msix | Where-Object { $_.FullName -match 'x64' } | ForEach-Object FullName)
+  # Expand-Archive 는 PS 5.1 에서 매우 느려 멈춘 것처럼 보인다 — .NET 으로 x64 파일만 꺼낸다
+  Say '   winget 설치 2/3: 필요한 64비트 파일만 꺼냅니다'
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $out = "$Tmp\wgdeps"; New-Item -ItemType Directory $out -Force | Out-Null
+  $zip = [IO.Compression.ZipFile]::OpenRead($depZip)
+  try {
+    foreach ($en in $zip.Entries) {
+      if ($en.FullName -match 'x64' -and $en.Name -match '\.(appx|msix)$') { [IO.Compression.ZipFileExtensions]::ExtractToFile($en, (Join-Path $out $en.Name), $true) }
+    }
+  } finally { $zip.Dispose() }
+  $deps = @(Get-ChildItem $out -Recurse -Include *.appx, *.msix | ForEach-Object FullName)
+  Say ('   winget 설치 3/3: 등록합니다(1~2분, 의존 패키지 {0}개)' -f $deps.Count)
   Add-AppxProvisionedPackage -Online -PackagePath $bundle -DependencyPackagePath $deps -LicensePath $lic | Out-Null
   Add-AppxPackage -Path $bundle -DependencyPath $deps -EA SilentlyContinue
 }
@@ -540,7 +563,7 @@ $bNone = New-Btn '전체 해제' 118 100 { Set-AllChecked $false }
 # Remiz WSH 도구(방화벽·디펜더·업데이트 등 윈도우 초기 설정)를 그대로 연다 — USB PC설치\도구 의 사용자 도구를 띄우기만 한다
 $bWsh = New-Btn 'Remiz WSH 열기' 300 160 {
   $p = if ($Usb) { Join-Path (Join-Path $Usb '도구') 'WSH by Remiz.cmd' } else { $null }
-  if ($p -and (Test-Path -LiteralPath $p)) { Start-Process -FilePath $p }
+  if ($p -and (Test-Path -LiteralPath $p)) { Start-Process -FilePath $p -Verb RunAs -WorkingDirectory (Split-Path $p) }   # 관리자 권한으로 띄운다
   else { [void][System.Windows.Forms.MessageBox]::Show("USB 의 PC설치\도구 폴더에 'WSH by Remiz.cmd' 가 없습니다.`r`nRemiz 도구를 그 폴더에 넣어 두세요.", 'Remiz WSH') }
 }
 $bGo = New-Btn '선택한 것 설치' 604 140 { Start-Worker }
