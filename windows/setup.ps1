@@ -27,9 +27,10 @@ $GitEmail = 'devkhh002@gmail.com'
 $DevRoot  = 'C:\dev'
 $ClaudeModel = 'opus[1m]'   # Claude Code 기본 모델 — 별칭이라 새 Opus가 나오면 자동으로 따라간다 (빼려면 '' 로)
 $OldClaudeModels = @('claude-opus-5-5[1m]')   # 예전에 이 설치가 넣던 값 — 이것만 새 기본값으로 바꾸고, 사람이 고른 모델은 그대로 둔다
-$UpgradeSkip = @('Google.ChromeRemoteDesktopHost')   # '모두 최신으로' 에서 빼는 winget 아이디 — 올리는 동안 원격 접속이 끊긴다
+$UpgradeSkip = @('Google.ChromeRemoteDesktopHost', 'LizardByte.Sunshine', 'Tailscale.Tailscale')   # '모두 최신으로' 에서 빼는 winget 아이디 — 원격 호스트라 올리는 동안 원격 접속이 끊긴다
 # '모두 최신으로' 에서 빼는 ⑤ 개발 환경 — 위 $V 로 버전을 고정한다(올릴 때는 $V 를 고친다). * 가능
 $UpgradeFixed = @('Git.Git', 'OpenJS.NodeJS*', 'Python.Python.3.13', 'Python.Launcher', 'GitHub.cli', 'Microsoft.PowerShell', 'Microsoft.WindowsTerminal')
+$UpgradeOwn = @('Daum.PotPlayer')   # catalog 에서 url: 로 까는 앱의 winget 아이디 — winget 단계에서 빼고 'winget 밖' 단계에서 공식 설치본으로 올린다
 # ────────────────────────────────────────────────────────────────────
 
 $ErrorActionPreference = 'Continue'
@@ -82,6 +83,7 @@ if ($Gui -or $Snapshot) {
 }
 $script:Splash = $null
 if ($Gui) {
+  # (숨겨 띄운 프로세스는 첫 ShowWindow 가 '숨김' 으로 바뀐다 — 콘솔 숨기기·준비 창이 그 첫 호출을 쓰므로 설치 화면은 제대로 보인다. 둘 다 빼면 설치 화면이 안 보일 수 있다)
   Hide-OwnConsole
   $script:Pump = $true
   $script:Splash = New-Object System.Windows.Forms.Form
@@ -124,9 +126,13 @@ function Q($s) { "'" + ([string]$s -replace "'", "''") + "'" }
 # 진행 기록: 설치 화면이 이 파일을 읽어 보여 준다(@@ 줄은 화면용 표시)
 function Mark($line) { if ($Progress) { try { [IO.File]::AppendAllText($Progress, "$line`r`n", (New-Object Text.UTF8Encoding $false)) } catch {} } }
 function Say($msg, $color = 'Gray') { Write-Host $msg -ForegroundColor $color; Mark $msg }
+# 일꾼은 시작하자마자 자기 창을 알린다 — 상태 확인(최대 2분) 중에 설치 화면이 닫혀도 이 창을 꺼내 보일 수 있게
+if ($Progress) { Mark "@@HWND $([DevEnv.Con]::GetConsoleWindow())" }
+# 끝나면 바로 닫는다(-NoPause) — 단 설치 화면이 먼저 닫혀 이 창이 보이고 있으면, 결과·재부팅 안내를 읽도록 기다린다
+function Wait-Close { if (-not $NoPause -or ($Progress -and (Test-Path -LiteralPath "$Progress.closed") -and [DevEnv.Con]::IsWindowVisible([DevEnv.Con]::GetConsoleWindow()))) { Read-Host 'Enter를 누르면 닫습니다' } }
 # 바깥 프로그램을 시간 제한을 두고 실행 — 응답이 없으면 끝내고 $null (winget 이 반쯤 깔린 PC 에서 상태 확인이 영원히 멈추던 것)
 # (화면이 떠 있으면 기다리는 동안에도 화면이 움직인다. 출력은 UTF-8 로 읽는다 — winget·git 의 한글)
-function Invoke-Timed($exe, [string[]]$argList, [int]$sec) {
+function Invoke-Timed($exe, [string[]]$argList, [int]$sec, [switch]$Bytes) {
   $out = [IO.Path]::GetTempFileName(); $err = [IO.Path]::GetTempFileName()
   try {
     $p = Start-Process -FilePath $exe -ArgumentList $argList -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err -EA Stop
@@ -137,7 +143,8 @@ function Invoke-Timed($exe, [string[]]$argList, [int]$sec) {
       if ($sw.Elapsed.TotalSeconds -gt $sec) { try { $p.Kill() } catch {}; return $null }
     }
     $p.WaitForExit()
-    return @{ Code = $p.ExitCode; Out = [IO.File]::ReadAllText($out); Err = [IO.File]::ReadAllText($err) }
+    $ob = $null; if ($Bytes) { $ob = [IO.File]::ReadAllBytes($out) }   # -Bytes: 출력을 글자로 바꾸지 않고 그대로(UTF-16·이진 파일 내용)
+    return @{ Code = $p.ExitCode; Out = $(if ($Bytes) { '' } else { [IO.File]::ReadAllText($out) }); Bytes = $ob; Err = [IO.File]::ReadAllText($err) }
   } catch { return $null } finally { Remove-Item $out, $err -EA 0 }
 }
 # 명령줄 인자 하나를 따옴표로 감싼다(빈칸·한글 경로) — Start-Process 는 인자를 그냥 이어 붙인다
@@ -152,10 +159,12 @@ function ConvertTo-Cells([string]$s) {
   }
   , $l
 }
-function ConvertFrom-WingetTable([string]$text) {
+function ConvertFrom-WingetTable([string]$text, [switch]$MainOnly) {
   $lines = @($text -split "`n" | ForEach-Object { ($_.TrimEnd("`r") -split "`r")[-1].TrimEnd() })   # 진행 표시가 \r 로 덮어쓴 줄은 마지막 것만
   $dash = -1; for ($i = 1; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^-{10,}$') { $dash = $i; break } }
   if ($dash -lt 1) { return }
+  # -MainOnly: 첫 표가 '명시적 대상 지정이 필요한' 패키지 표면(위에 그 안내 문장) 올릴 것이 아니다 — 본 표가 비어 있을 때 그 표만 나온다
+  if ($MainOnly) { for ($k = $dash - 2; $k -ge [Math]::Max(0, $dash - 4); $k--) { if ($lines[$k] -match 'explicit|명시적') { return } } }
   $head = ConvertTo-Cells $lines[$dash - 1]
   # 열 후보 = 머리줄 낱말 자리 중 첫 표 줄에서도 바로 앞 칸이 빈 곳. 표 줄 = 늘 채워지는 아이디·버전 열(후보 2·3번째)이 그 자리에서 시작하는 줄.
   # 표 밑의 '8 업그레이드를 사용할 수 있습니다.'·'1 패키지에 … 핀이 있습니다' 같은 줄에서 표가 끝난다
@@ -165,6 +174,7 @@ function ConvertFrom-WingetTable([string]$text) {
   if ($tok.Count -lt 3) { return }
   $rows = @()
   for ($i = $dash + 1; $i -lt $lines.Count -and $lines[$i]; $i++) {
+    if ($lines[$i] -match '^\d+ (upgrades? available|업그레이드를 사용할 수 있습니다)') { break }   # 표 밑 개수 줄 — 한글 줄은 칸이 우연히 맞으면 표 줄처럼 보인다
     $c = ConvertTo-Cells $lines[$i]
     $ok = $true
     foreach ($p in $tok[1], $tok[2]) { if ($c.Count -le $p -or $c[$p - 1] -ne ' ' -or $c[$p] -notmatch '\S') { $ok = $false } }
@@ -221,7 +231,8 @@ function Test-Winget {
   Refresh-Path
   $c = Get-Command winget -EA 0
   if (-not $c) { return $false }
-  if ($null -eq $script:WingetOk) { $r = Invoke-Timed $c.Source @('--version') 20; $script:WingetOk = [bool]($r -and $r.Code -eq 0) }
+  # 1.6 보다 낡은 winget(핀·--disable-interactivity 가 없거나 불안정)은 없는 것으로 보고 새로 깔게 한다
+  if ($null -eq $script:WingetOk) { $r = Invoke-Timed $c.Source @('--version') 20; $script:WingetOk = [bool]($r -and $r.Code -eq 0 -and $r.Out -match 'v?(\d+\.\d+)' -and [version]($Matches[1]) -ge [version]'1.6') }
   return $script:WingetOk
 }
 function Install-Winget {
@@ -270,13 +281,15 @@ function Test-WingetPkg($id, $ver) {
 function Install-WingetPkg($id, $ver, $source) {
   if (-not (Test-Winget)) { Install-Winget }
   if (-not (Test-Winget)) { Say '   winget 이 없어 설치하지 못했습니다' Yellow; return }
+  # 고정 버전(@버전)을 바꾸면 예전 버전의 핀이 새 버전 설치를 막는다 — 먼저 풀고, 깐 뒤 새 버전으로 다시 묶는다
+  if ($ver) { & winget pin remove --id $id --exact --accept-source-agreements --disable-interactivity *> $null }
   $a = @('install', '--id', $id, '--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
   if ($ver) { $a += @('--version', $ver) }
   if ($source) { $a += @('--source', $source) }
   & winget @a
   $code = $LASTEXITCODE
   if ($code -in 0, -1978335189, -1978335135) {   # 성공 · 올릴 것 없음 · 이미 설치됨
-    if ($ver) { & winget pin add --id $id --version $ver --accept-source-agreements --disable-interactivity *> $null }   # 모두 최신으로 에서도 안 올라가게
+    if ($ver) { & winget pin add --id $id --version $ver --force --accept-source-agreements --disable-interactivity *> $null }   # 모두 최신으로 에서도 안 올라가게(--force: 있던 핀을 바꾼다)
     if ($null -eq $script:WG) { $script:WG = @{} }
     $script:WG[$id] = $(if ($ver) { $ver } else { 'installed' })
     return
@@ -369,7 +382,7 @@ Add-Item $G1 netdriver '네트워크 드라이버 — USB 의 PC설치\네트워
   $script:Online = Test-Online
 } -OkText '연결됨'
 
-# ② Windows 설정 (WSH 에서 가져온 것 중 보안 장치를 끄지 않는 것만)
+# ② Windows 설정
 Add-Item $G2 power '전원: 고성능 · 절전 안 함 (원격 PC 가 잠들지 않게)' { (Get-AcIndex SUB_SLEEP STANDBYIDLE) -eq 0 } {
   powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null
   powercfg /change standby-timeout-ac 0
@@ -401,49 +414,62 @@ Add-Item $G2 classicmenu '윈11 우클릭 메뉴를 예전 방식으로' { Test-
 
 # ③ 드라이버 — 그래픽은 NVIDIA 공식 조회로 늘 최신판. 랜(네트워크) 드라이버는 지금 인터넷을 쓰는 어댑터라 건드리지 않는다(원격이 끊긴다) — ① 의 USB '네트워크 드라이버' 로만.
 $NvCacheDir = "$env:LOCALAPPDATA\dev-env"
-function Get-NvGpu { Get-CimInstance Win32_VideoController -EA 0 | Where-Object { $_.PNPDeviceID -like 'PCI\VEN_10DE*' -and $_.Name -match 'GeForce' } | Select-Object -First 1 }
+# GeForce 카드 — 드라이버가 아직 없으면 이름이 'Microsoft 기본 디스플레이 어댑터' 로 보여도 장치 번호(VEN_10DE)로 찾는다
+# (드라이버가 깔린 Quadro 등 GeForce 가 아닌 NVIDIA 카드는 뺀다. 드라이버가 없는 동안은 그 카드도 잡혀 장치 번호로 그 카드의 공식 드라이버를 깐다)
+function Get-NvGpu { Get-CimInstance Win32_VideoController -EA 0 | Where-Object { $_.PNPDeviceID -like 'PCI\VEN_10DE*' -and ($_.Name -match 'GeForce' -or $_.Name -notmatch 'NVIDIA') } | Select-Object -First 1 }
 # 윈도우 드라이버 버전(예: 27.21.14.5751) → NVIDIA 표기 버전(457.51): 끝 두 묶음을 붙여 뒤 5자리에 점 하나
 function Convert-NvVer($v) { $d = ("$v".Split('.')[-2..-1] -join '') -replace '\D'; if ($d.Length -lt 5) { return $null }; [double]($d.Substring($d.Length - 5).Insert(3, '.')) }
-# 카드 이름 → NVIDIA 조회 ID(계열 psid·카드 pfid) → 최신 드라이버(@{Version;Url}). 못 찾으면 $null. 상태 확인이 느려지지 않게 12시간 캐시(설치할 때는 -Fresh 로 새로 조회).
+# 최신 드라이버(@{Version;Url}) — 1) PCI 장치 번호로(GeForce Experience 가 쓰는 공식 조회: 요청 한 번, 카드 이름·노트북 여부·드라이버 유무와 무관)
+# 2) 안 되면 카드 이름으로(nvidia.com 드라이버 찾기: 계열 psid·카드 pfid). 못 찾으면 $null. 상태 확인이 느려지지 않게 12시간 캐시(설치할 때는 -Fresh 로 새로 조회).
 function Get-NvLatest($gpu, [switch]$Fresh) {
   if (-not $gpu) { return $null }
   $cache = Join-Path $NvCacheDir ('nv-' + ($gpu.PNPDeviceID -replace '[^A-Za-z0-9]', '_') + '.json')
   if (-not $Fresh -and (Test-Path $cache) -and (Get-Item $cache).LastWriteTime -gt (Get-Date).AddHours(-12)) {
     try { $c = Get-Content $cache -Raw | ConvertFrom-Json; return @{ Version = [double]$c.Version; Url = $c.Url } } catch {}
   }
+  $r = $null
   try {
     $ch = (Get-CimInstance Win32_SystemEnclosure -EA 0).ChassisTypes
-    $laptop = @(8, 9, 10, 14) | Where-Object { $ch -contains $_ }   # 노트북이면 '(Notebooks)' 계열을 쓴다
-    $name = ($gpu.Name -replace '^NVIDIA\s+', '').Trim()
-    $series = (Invoke-RestMethod 'https://www.nvidia.com/Download/API/lookupValueSearch.aspx?TypeID=2' -TimeoutSec 20).LookupValueSearch.LookupValues.LookupValue |
-      Where-Object { [bool]($_.Name -match 'Notebooks') -eq [bool]$laptop } | Sort-Object { [int]$_.Value } -Descending
-    $psid = $null; $pfid = $null
-    foreach ($s in $series) {
-      $cards = (Invoke-RestMethod "https://www.nvidia.com/Download/API/lookupValueSearch.aspx?TypeID=3&ParentID=$($s.Value)" -TimeoutSec 20).LookupValueSearch.LookupValues.LookupValue
-      $hit = $cards | Where-Object { $_.Name -eq $name } | Select-Object -First 1
-      if ($hit) { $psid = $s.Value; $pfid = $hit.Value; break }
+    $laptop = @(8, 9, 10, 14, 30, 31, 32) | Where-Object { $ch -contains $_ }   # 노트북·2-in-1 이면 노트북용(Notebooks) 드라이버
+    $dev = [regex]::Match($gpu.PNPDeviceID, 'DEV_([0-9A-F]{4})').Groups[1].Value
+    if ($dev) {
+      $q = @{ dIDa = @("${dev}_10DE"); osC = '10.0'; osB = "$([Environment]::OSVersion.Version.Build)"; is6 = '1'; lg = '1033'; iLp = $(if ($laptop) { '1' } else { '0' }); prvMd = '0'; gcV = '3.27.0.112'; gIsB = '1'; dch = '1'; upCRD = '0'; isCRD = '0' } | ConvertTo-Json -Compress
+      $a = try { (Invoke-RestMethod ('https://gfwsl.geforce.com/nvidia_web_services/controller.gfeclientcontent.NG.php/com.nvidia.services.GFEClientContent_NG.getDispDrvrByDevid/' + [uri]::EscapeDataString($q)) -TimeoutSec 20).DriverAttributes } catch { $null }
+      if ($a.DownloadURLAdmin) { $r = @{ Version = [double]$a.Version; Url = $a.DownloadURLAdmin } }
     }
-    if (-not $pfid) { return $null }
-    $osid = if ([Environment]::OSVersion.Version.Build -ge 22000) { 135 } else { 57 }   # Win11 / Win10
-    $u = "https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php?func=DriverManualLookup&psid=$psid&pfid=$pfid&osID=$osid&languageCode=1033&isWHQL=1&dch=1&sort1=0&numberOfResults=1"
-    $d = (Invoke-RestMethod $u -TimeoutSec 20).IDS[0].downloadInfo
-    if ($d.DownloadURL) {
-      $r = @{ Version = [double]$d.Version; Url = $d.DownloadURL }
-      try { New-Item -ItemType Directory $NvCacheDir -Force | Out-Null; $r | ConvertTo-Json | Set-Content $cache } catch {}
-      return $r
+    if (-not $r -and $gpu.Name -match 'GeForce') {
+      $name = ($gpu.Name -replace '^NVIDIA\s+', '').Trim()
+      $series = (Invoke-RestMethod 'https://www.nvidia.com/Download/API/lookupValueSearch.aspx?TypeID=2' -TimeoutSec 20).LookupValueSearch.LookupValues.LookupValue |
+        Where-Object { [bool]($_.Name -match 'Notebooks') -eq [bool]$laptop } | Sort-Object { [int]$_.Value } -Descending
+      $psid = $null; $pfid = $null
+      foreach ($s in $series) {
+        $cards = (Invoke-RestMethod "https://www.nvidia.com/Download/API/lookupValueSearch.aspx?TypeID=3&ParentID=$($s.Value)" -TimeoutSec 20).LookupValueSearch.LookupValues.LookupValue
+        $hit = $cards | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+        if ($hit) { $psid = $s.Value; $pfid = $hit.Value; break }
+      }
+      if ($pfid) {
+        $osid = if ([Environment]::OSVersion.Version.Build -ge 22000) { 135 } else { 57 }   # Win11 / Win10
+        $u = "https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php?func=DriverManualLookup&psid=$psid&pfid=$pfid&osID=$osid&languageCode=1033&isWHQL=1&dch=1&sort1=0&numberOfResults=1"
+        $d = (Invoke-RestMethod $u -TimeoutSec 20).IDS[0].downloadInfo
+        if ($d.DownloadURL) { $r = @{ Version = [double]$d.Version; Url = $d.DownloadURL } }
+      }
     }
   } catch {}
-  return $null
+  if ($r) { try { New-Item -ItemType Directory $NvCacheDir -Force | Out-Null; $r | ConvertTo-Json | Set-Content $cache } catch {} }
+  return $r
 }
-# NVIDIA GeForce 카드가 있을 때만 항목이 뜬다 (없는 PC 에선 목록에 안 나온다)
+# NVIDIA GeForce 카드가 있을 때만 항목이 뜬다 — 드라이버가 아직 없어도 (없는 PC 에선 목록에 안 나온다)
 if (Get-NvGpu) {
   Add-Item $G3 gpudriver 'NVIDIA 그래픽 드라이버 — 공식 조회로 최신판 (설치 중 화면이 잠깐 깜빡인다 · 원격 중엔 기본 꺼짐)' {
-    $g = Get-NvGpu; $inst = Convert-NvVer $g.DriverVersion; $lat = Get-NvLatest $g
+    $g = Get-NvGpu
+    if (-not $g) { return $true }   # 드라이버가 깔려 이름이 'NVIDIA …'(GeForce 가 아닌 카드)로 바뀌었다 — 더 볼 것 없음
+    if ($g.Name -notmatch 'NVIDIA') { return $false }   # 기본 디스플레이 드라이버 = NVIDIA 드라이버가 아직 없다
+    $inst = Convert-NvVer $g.DriverVersion; $lat = Get-NvLatest $g
     (-not $lat) -or (-not $inst) -or ($inst -ge $lat.Version)   # 최신을 못 알아내면 들볶지 않는다
   } {
     $g = Get-NvGpu; $lat = Get-NvLatest $g -Fresh
     if (-not $lat) { Say '   NVIDIA 최신 드라이버를 못 찾았습니다 (인터넷·카드 이름 확인)' Yellow; return }
-    Say "   지금 $(Convert-NvVer $g.DriverVersion) → 최신 $($lat.Version)"
+    Say "   지금 $(if ($g.Name -match 'NVIDIA') { Convert-NvVer $g.DriverVersion } else { '드라이버 없음' }) → 최신 $($lat.Version)"
     $p = Fetch $lat.Url "nvidia-$($lat.Version).exe"
     if ((Get-AuthenticodeSignature $p).Status -ne 'Valid') { Remove-Item $p -Force; throw '서명이 올바르지 않은 NVIDIA 설치 파일 — 실행하지 않음' }
     Say '   설치 중 — 화면이 잠깐 깜빡입니다 (원격이면 잠시 끊겨 보일 수 있음)'
@@ -453,7 +479,10 @@ if (Get-NvGpu) {
 
 # ④ 도구·앱 — winget 먼저, 그다음 catalog.txt 의 앱들
 Add-Item $G4 winget 'winget — 아래 앱들을 늘 최신판으로 설치하는 도구' { Test-Winget } { Install-Winget }
-$Catalog = @(Get-Content "$Repo\catalog.txt" -Encoding UTF8 -EA 0 | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' } | ForEach-Object {
+# catalog.local = '앱 추가' 를 GitHub 에 못 올린 PC 에서 이번 설치 화면에만 넣은 줄 — 이 설치 화면과 그 일꾼만 읽는 %TEMP% 의 임시 파일
+# (저장소·USB 예비판 폴더에는 쓰지 않는다 — USB 예비판으로 열린 PC 에서 넣은 줄이 다음 PC 로 퍼지지 않게. 일꾼은 이 환경 변수를 물려받는다)
+if ($Gui) { $env:DEV_ENV_CATALOG_LOCAL = Join-Path $env:TEMP "dev-env-catalog-$PID.local.txt"; Remove-Item -LiteralPath $env:DEV_ENV_CATALOG_LOCAL -EA 0 }
+$Catalog = @(Get-Content -LiteralPath (@("$Repo\catalog.txt") + @($env:DEV_ENV_CATALOG_LOCAL | Where-Object { $_ })) -Encoding UTF8 -EA 0 | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' } | ForEach-Object {
   $c = @($_.Split('|') | ForEach-Object { $_.Trim() })
   if ($c.Count -ge 3) { [pscustomobject]@{ Group = $c[0]; Name = $c[1]; How = $c[2]; On = ($c.Count -lt 4) -or ($c[3] -ne 'off'); Hint = $(if ($c.Count -ge 5) { $c[4] } else { '' }) } }
 })
@@ -634,9 +663,9 @@ Add-Item $G5 claude 'Claude Code' { Test-Path "$env:USERPROFILE\.local\bin\claud
   foreach ($d in @("$env:USERPROFILE\.local\bin", "$env:APPDATA\npm")) { if ($up -notlike "*$d*") { $up = ($up.TrimEnd(';') + ';' + $d).TrimStart(';') } }
   [Environment]::SetEnvironmentVariable('Path', $up, 'User')
 }
-Add-Item $G5 claudeconfig "Claude 설정 — 오케스트라 모드(말로 켜고 끄기·/orchestra)·상태 표시줄·기본 모델 $ClaudeModel(직접 고른 모델은 그대로)" {
+Add-Item $G5 claudeconfig "Claude 설정 — 오케스트라 모드(/orchestra)·상태 표시줄·기본 모델 $ClaudeModel(직접 고른 모델은 그대로)" {
   $c = "$env:USERPROFILE\.claude"
-  $m = try { (Get-Content "$c\settings.json" -Raw -EA Stop | ConvertFrom-Json) } catch { $null }
+  $m = try { (Get-Content "$c\settings.json" -Raw -Encoding UTF8 -EA Stop | ConvertFrom-Json) } catch { $null }
   (Test-Path "$c\commands\orchestra.md") -and (Test-Path "$c\statusline.sh") -and ($m.statusLine.command -match 'statusline\.sh') -and
     ((-not $ClaudeModel) -or ($m.model -and $m.model -notin $OldClaudeModels))
 } {
@@ -649,7 +678,7 @@ Add-Item $G5 claudeconfig "Claude 설정 — 오케스트라 모드(말로 켜�
   Copy-Item "$Repo\claude\CLAUDE.md" "$c\CLAUDE.md" -Force
   # settings.json 은 덮지 않고 statusLine 을 넣는다. 기본 모델은 비어 있거나 예전 기본값일 때만 넣는다(직접 고른 모델은 그대로)
   $sf = "$c\settings.json"
-  $s = if (Test-Path $sf) { Get-Content $sf -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
+  $s = if (Test-Path $sf) { Get-Content $sf -Raw -Encoding UTF8 | ConvertFrom-Json } else { [pscustomobject]@{} }   # UTF-8 로 읽는다 — 안 그러면 한글 경로가 든 권한 규칙이 깨져 저장된다
   $s | Add-Member statusLine ([pscustomobject]@{ type = 'command'; command = 'bash ~/.claude/statusline.sh' }) -Force
   if ($ClaudeModel -and (-not $s.model -or $s.model -in $OldClaudeModels)) { $s | Add-Member model $ClaudeModel -Force }
   [IO.File]::WriteAllText($sf, ($s | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding $false))
@@ -671,22 +700,27 @@ foreach ($line in $projLines) {
   $folder = Join-Path $DevRoot ($c[0] -replace '/', '\'); $url = $c[1]; $lnk = $c[2]
   $id = 'proj:' + $c[0]
   $label = if ($url) { "$lnk — GitHub 에서 받기 + 바로가기" } else { "$lnk — 바로가기만 (폴더는 백업에서 직접 복원)" }
-  $check = [scriptblock]::Create("(Test-Path -LiteralPath $(Q $folder)) -and (Test-Path -LiteralPath $(Q "$([Environment]::GetFolderPath('Desktop'))\$lnk.lnk"))")
+  # GitHub 에서 받는 것은 폴더가 비어 있지 않아야 된 것 — 받다 실패해 빈 폴더만 남은 PC(예전 판)도 다시 받게
+  $has = if ($url) { "[bool](Get-ChildItem -LiteralPath $(Q $folder) -Force -EA 0 | Select-Object -First 1)" } else { "(Test-Path -LiteralPath $(Q $folder))" }
+  $check = [scriptblock]::Create("$has -and (Test-Path -LiteralPath $(Q "$([Environment]::GetFolderPath('Desktop'))\$lnk.lnk"))")
   $install = {
     param($folder, $url, $lnk)
     New-Item -ItemType Directory (Split-Path $folder -Parent) -Force | Out-Null
-    if ($url -and -not (Test-Path -LiteralPath $folder)) {
+    if ($url -and -not (Get-ChildItem -LiteralPath $folder -Force -EA 0 | Select-Object -First 1)) {   # 없거나 빈 폴더면 받는다
       Refresh-Path
       if ($url -match 'github\.com') {
         & gh auth status 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) {
-          # 로그인은 진행 창에서 8자리 코드를 보고 Enter 를 눌러야 한다 — 숨어 있던 진행 창을 앞으로 꺼낸다
-          Say '   GitHub 로그인이 필요합니다 — 앞에 뜬 진행 창의 8자리 코드를 확인하고 Enter (브라우저가 열립니다)' Yellow
-          Show-OwnConsole
+          # 로그인은 진행 창에서 Enter·8자리 코드를 봐야 한다 — 설치 화면에 진행 창을 앞으로 꺼내 달라고 한다(@@SHOW)
+          Say "   GitHub 로그인이 필요합니다 — 앞에 뜬 진행 창에서: 'Authenticate Git …? (Y/n)' 은 Enter → 8자리 코드를 확인하고 Enter (브라우저가 열립니다)" Yellow
+          if ($Progress) { Mark '@@SHOW' } else { Show-OwnConsole }
           & gh auth login -h github.com -p https -w; & gh auth setup-git
         }
       }
       & git clone $url $folder
+      # 받지 못하면(로그인 취소·인터넷·받다 만 것) 실패로 끝낸다 — 받다 만 폴더는 지운다(없거나 빈 폴더일 때만 받으므로 사람의 파일은 없다).
+      # 빈 폴더·바로가기가 남아 '설치됨' 으로 보이지 않게, 다음에 다시 받게
+      if ($LASTEXITCODE -ne 0 -or -not (Get-ChildItem -LiteralPath $folder -Force -EA 0 | Select-Object -First 1)) { Remove-Item -LiteralPath $folder -Recurse -Force -EA 0; throw "GitHub 에서 받지 못했습니다: $url — GitHub 로그인·인터넷을 확인하고 이 항목만 다시 설치하세요" }
     }
     if (-not (Test-Path -LiteralPath $folder)) { Write-Host "   폴더가 없습니다: $folder — 백업을 풀어 넣은 뒤 이 항목만 다시 실행하세요"; New-Item -ItemType Directory $folder -Force | Out-Null }
     $ws = New-Object -ComObject WScript.Shell
@@ -745,13 +779,13 @@ function Run-Upgrade {
   else {
     $wg = (Get-Command winget).Source
     # 버전 고정은 winget 핀으로도 묶는다(핀 없이 예전에 깐 PC 가 있다) — winget 이 스스로도 건너뛰게
-    $pins = @(foreach ($e in $Catalog) { if ($e.How -match '^winget:([^@]+)@(.+)$') { $Matches[1]; Invoke-Timed $wg @('pin', 'add', '--id', $Matches[1], '--version', $Matches[2], '--accept-source-agreements', '--disable-interactivity') 60 | Out-Null } })
+    $pins = @(foreach ($e in $Catalog) { if ($e.How -match '^winget:([^@]+)@(.+)$') { $Matches[1]; Invoke-Timed $wg @('pin', 'add', '--id', $Matches[1], '--version', $Matches[2], '--force', '--accept-source-agreements', '--disable-interactivity') 60 | Out-Null } })
     # url·latest 로 까는 앱은 아래에서 따로 — winget 목록에 같은 앱이 보여도 넘긴다(HWiNFO: winget 주소가 404)
     $own = @(foreach ($e in $Catalog) { if ($e.How -match '^(url|latest):' -and $e.Hint -match '^arp[:=](.+)$') { $Matches[1] } })
     Say '   새 판이 있는 앱을 찾습니다 (1~2분)'
     $r = Invoke-Timed $wg @('upgrade', '--source', 'winget', '--accept-source-agreements', '--disable-interactivity') 180
-    if (-not $r) { Say '   winget 이 3분 안에 답하지 않아 winget 앱은 건너뜁니다' Yellow }
-    $rows = @(if ($r) { ConvertFrom-WingetTable $r.Out })
+    if (-not $r) { Say '   winget 이 3분 안에 답하지 않아 winget 앱은 건너뜁니다' Yellow; $fail++ }
+    $rows = @(if ($r) { ConvertFrom-WingetTable $r.Out -MainOnly })
     $map = $null
     $todo = @(foreach ($row in $rows) {
       if ($row.Count -lt 4 -or -not $row[1]) { continue }
@@ -765,10 +799,12 @@ function Run-Upgrade {
       }
       if ($id -in $UpgradeSkip) { Say "   건너뜀(원격 접속이 끊긴다): $name" DarkGray; continue }
       if ($id -in $pins -or ($UpgradeFixed | Where-Object { $id -like $_ })) { Say "   건너뜀(버전 고정): $name $cur" DarkGray; continue }
-      if ($own | Where-Object { $name -like "*$_*" }) { continue }
+      if ($id -in $UpgradeOwn -or ($own | Where-Object { $name -like "*$_*" })) { continue }
       [pscustomobject]@{ Name = $name; Id = $id; Cur = $cur; New = $new }
     })
-    if (-not $todo) { Say '   winget 앱은 모두 최신입니다' Green }
+    # 표가 없는데 winget 이 실패 코드로 끝났으면 '모두 최신' 이 아니라 확인을 못 한 것 (0 · 0x8A150014 · 0x8A15002B 는 '올릴 것 없음')
+    if ($r -and -not $rows -and $r.Code -notin 0, -1978335212, -1978335189) { Say ("   winget 이 새 판 목록을 주지 못했습니다(0x{0:X8}) — winget 앱은 건너뜁니다" -f $r.Code) Yellow; $fail++ }
+    elseif ($r -and -not $todo) { Say '   winget 앱은 모두 최신입니다' Green }
     $n = 0
     foreach ($t in $todo) {
       $n++; Say "[$n/$($todo.Count)] $($t.Name)  $($t.Cur) → $($t.New)" Cyan
@@ -798,7 +834,7 @@ function Run-Upgrade {
   Say ("끝 — 올림 {0} · 실패 {1}" -f $done, $fail) $(if ($fail) { 'Yellow' } else { 'Green' })
   Stop-Transcript | Out-Null
   Remove-Item $Tmp -Recurse -Force -EA 0
-  if (-not $NoPause) { Read-Host 'Enter를 누르면 닫습니다' }
+  Wait-Close
 }
 if ($Upgrade) { Run-Upgrade; return }
 
@@ -820,11 +856,13 @@ function Run-Install($Pick) {
   $reboot = @(); $n = 0
   foreach ($it in $Pick) {
     $n++
-    if (Invoke-Check $it) { Say "[$n/$($Pick.Count)] $($it.Name) — 이미 $($it.OkText), 건너뜀" DarkGray; continue }
+    if (Invoke-Check $it) { Say "[$n/$($Pick.Count)] $($it.Name) — 이미 $($it.OkText), 건너뜀" DarkGray; Mark "@@STATUS $($it.Id)`t1"; continue }
     Say "[$n/$($Pick.Count)] $($it.Name)" Cyan
     try {
       & $it.Install; Refresh-Path
-      if (Invoke-Check $it) {
+      $ok = Invoke-Check $it
+      Mark ("@@STATUS {0}`t{1}" -f $it.Id, [int]$ok)   # 항목마다 바로 알린다 — 일꾼이 중간에 멈춰도 된 것은 회색으로
+      if ($ok) {
         Say '   완료' Green
         if ($it.Reboot) { $reboot += $it.Name; Mark "@@REBOOT $($it.Name)" }
       } else { Say '   확인 필요 — 로그 참고' Yellow }
@@ -840,10 +878,9 @@ function Run-Install($Pick) {
   Write-Host ' • 새 터미널을 열고 claude 실행 → 브라우저 로그인'
   Write-Host ' • clasp login / firebase login (Apps Script·Firebase 쓰는 프로젝트만)'
   Write-Host ' • Tailscale 트레이 아이콘 → 로그인 / Sunshine: https://localhost:47990 관리자 계정·PIN'
-  Write-Host ' • 디펜더·방화벽·업데이트 차단 같은 보안 설정은 이 목록에 없다 — 필요하면 직접(WSH 등)'
   Write-Host ' • git이 없는 프로젝트·Claude 기억은 구글 드라이브 백업에서 복원 (README 참고)'
   Write-Host ' 로그: %USERPROFILE%\dev-env-setup.log'
-  if (-not $NoPause) { Read-Host 'Enter를 누르면 닫습니다' }
+  Wait-Close
 }
 if ($All) { Run-Install $Items; return }
 if ($Only) { $ids = $Only -join ',' -split ','; Run-Install @($Items | Where-Object { $ids -contains $_.Id }); return }
@@ -868,10 +905,12 @@ function Show-Msg($text, $buttons = 'OK', $icon = 'None') { [System.Windows.Form
 $font = New-Object System.Drawing.Font('Malgun Gothic', 10)
 
 $form = New-Object System.Windows.Forms.Form
+# 제목 'PC 설치 — 버전 …' 은 USB 시작하기(start.ps1)가 '설치 화면이 떴다' 고 아는 표시 — 바꾸면 start.ps1 도 바꾼다
 $form.Text = "PC 설치 — 버전 $Version"; $form.ClientSize = Sz 864 800; $form.StartPosition = 'CenterScreen'; $form.Font = $font
 try { $form.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSHOME\powershell.exe") } catch {}   # 작업 표시줄 아이콘
 $board = (Get-CimInstance Win32_BaseBoard -EA 0).Product
 $head = New-Ctl Label 12 10 714 24
+$head.AutoEllipsis = $true   # 길면 두 줄로 잘려 보이지 않게 '…' 로 줄인다
 $head.Text = "버전 $Version · $env:COMPUTERNAME · $board · " + $(if ($script:Online) { '인터넷 연결됨' } else { '인터넷 없음 — 먼저 ① 네트워크 드라이버' }) + $(if ($Usb) { " · USB $Usb" } else { '' })
 # 진행 창 = 설치를 실제로 하는 숨은 콘솔(일꾼). 받는 진행률·winget 메시지를 보고 싶을 때만 꺼낸다
 $bCon = New-Ctl Button 732 6 120 28 '진행 창 보기'
@@ -893,7 +932,7 @@ function Get-GroupNode($path) {
 }
 function Set-NodeLook($node) {
   $it = $node.Tag
-  $node.Text = $it.Name + $(if ($it.Installed) { "   — $($it.OkText)" } elseif ($it.Reboot) { '   (재부팅 필요)' } else { '' })
+  $node.Text = $it.Name + $(if ($it.Installed) { "   — $($it.OkText)" } elseif ($it.Reboot) { '   (설치 후 재부팅해야 적용)' } else { '' })
   $node.ForeColor = $(if ($it.Installed) { [System.Drawing.Color]::Gray } else { [System.Drawing.Color]::Black })
 }
 function Set-Down($node, $state) { foreach ($c in $node.Nodes) { $c.Checked = $state; Set-Down $c $state } }
@@ -911,6 +950,8 @@ function Add-ItemNode($it) {
   $node
 }
 foreach ($it in $Items) { [void](Add-ItemNode $it) }
+# winget 은 ④ 의 맨 위에 — 아래 앱들을 까는 도구라서 (묶음들을 미리 만들어 두어 그냥 넣으면 맨 아래로 간다)
+if ($NodeById['winget']) { $w = $NodeById['winget']; $p = $w.Parent; $p.Nodes.Remove($w); $p.Nodes.Insert(0, $w) }
 foreach ($k in @($GroupNodes.Keys)) { if ($GroupNodes[$k].Nodes.Count -eq 0) { $GroupNodes[$k].Remove(); $GroupNodes.Remove($k) } }   # 빈 묶음은 숨긴다(나중에 앱 추가로 생기면 다시 만든다)
 foreach ($n in $NodeById.Values) { Sync-Up $n.Parent }
 $tv.ExpandAll()
@@ -934,6 +975,16 @@ $bSrc = New-Btn '소스 올리기…' 450 116 { Show-Upload }
 $bGo = New-Btn '선택한 것 설치' 604 140 { Start-Install }
 $bClose = New-Btn '닫기' 752 100 { $form.Close() }
 function Set-Busy($on) { foreach ($b in $bAll, $bNone, $bAdd, $bUp, $bSrc, $bGo) { $b.Enabled = -not $on } }
+# 화면이 작거나 배율이 커서(1366x768 · 1080p 150% · 드라이버 없는 1024x768) 창이 화면보다 크면 창을 줄인다 — 목록이 줄고 아래 버튼은 늘 보인다
+# (Anchor 는 창 크기가 864x800 인 지금 정해야 한다)
+$tv.Anchor = 'Top,Bottom,Left,Right'; $log.Anchor = 'Bottom,Left,Right'; $head.Anchor = 'Top,Left,Right'; $bCon.Anchor = 'Top,Right'
+foreach ($b in $bAll, $bNone, $bAdd, $bUp, $bSrc, $bGo, $bClose) { $b.Anchor = 'Bottom,Left' }
+$wa = [System.Windows.Forms.Screen]::FromPoint([System.Windows.Forms.Cursor]::Position).WorkingArea   # CenterScreen 은 마우스가 있는 화면에 띄운다
+if ($form.Height -gt $wa.Height) { $form.Height = $wa.Height }
+if ($form.Width -gt $wa.Width) { $form.Width = $wa.Width }
+# 880 보다 좁은 화면(800x600 등)이면 아래 버튼 7개를 비례로 줄여 모두 보이게 (852 = 닫기의 오른쪽 끝)
+if ($form.ClientSize.Width -lt 864) { $k = ($form.ClientSize.Width - 12) / 852; foreach ($b in $bAll, $bNone, $bAdd, $bUp, $bSrc, $bGo, $bClose) { $b.Width = [int]($b.Width * $k); $b.Left = [int](12 + ($b.Left - 12) * $k) } }
+$form.MinimumSize = Sz $form.Width 420   # 손으로 줄여도 아래 버튼 줄이 잘리지 않게 폭은 처음 폭 아래로 줄이지 않는다(높이만 줄어든다)
 
 # 설치는 숨은 콘솔(일꾼)에서 돌리고, 이 화면은 그 진행 기록만 읽는다 — 그래서 화면이 멈추지 않는다
 $timer = New-Object System.Windows.Forms.Timer; $timer.Interval = 500
@@ -941,11 +992,13 @@ $script:WorkerHwnd = [IntPtr]::Zero
 function Start-Worker([string[]]$ModeArgs, [string]$StartMsg) {
   $script:Prog = Join-Path $env:TEMP "dev-env-progress-$PID.log"
   [IO.File]::WriteAllText($script:Prog, '')
+  Remove-Item "$script:Prog.closed" -EA 0   # 예전 창(같은 PID)이 남긴 '설치 화면 닫힘' 표시
   $script:Pos = 0; $script:RebootList = @(); $script:WorkerHwnd = [IntPtr]::Zero
   $a = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"") + $ModeArgs + @('-NoPause', '-Progress', "`"$script:Prog`"")
   if ($Usb) { $a += @('-Usb', "`"$Usb`"") }
   $log.AppendText("$StartMsg`r`n")
   $script:Worker = Start-Process powershell -ArgumentList $a -PassThru -WindowStyle Hidden
+  $null = $script:Worker.Handle   # PS 5.1 에서 끝난 뒤 ExitCode 를 읽으려면 필요
   Set-Busy $true
   $timer.Start()
 }
@@ -958,7 +1011,7 @@ function Start-Install {
   Start-Worker @('-OnlyFile', "`"$onlyFile`"") "설치를 시작합니다 — 받는 진행률·자세한 메시지는 오른쪽 위 '진행 창 보기'."
 }
 function Start-Upgrade {
-  $msg = "설치된 앱을 모두 최신판으로 올립니다.`r`n`r`n - winget 앱: 새 판이 있는 것만`r`n - 팟플레이어·HWiNFO 처럼 winget 밖의 앱: 공식 최신 설치본으로`r`n - 빼는 것: 버전 고정(VirtualBox 등) · Chrome 원격 데스크톱 호스트(올리는 동안 원격이 끊긴다)`r`n`r`n앱이 켜져 있으면 잠깐 꺼질 수 있습니다. 진행할까요?"
+  $msg = "설치된 앱을 모두 최신판으로 올립니다.`r`n`r`n - winget 앱: 새 판이 있는 것만`r`n - 팟플레이어·HWiNFO 처럼 winget 밖의 앱: 공식 최신 설치본으로`r`n - 빼는 것: 버전 고정(VirtualBox·⑤ 개발 도구) · 원격 호스트(Chrome 원격 데스크톱·Sunshine·Tailscale — 올리는 동안 원격이 끊긴다)`r`n`r`n앱이 켜져 있으면 잠깐 꺼질 수 있습니다. 진행할까요?"
   if ((Show-Msg $msg 'YesNo' 'Question') -ne 'Yes') { return }
   Start-Worker @('-Upgrade') "모두 최신으로 — 시작합니다 (자세한 메시지는 '진행 창 보기')."
 }
@@ -978,6 +1031,7 @@ function Show-Line($line) {
     }
   } elseif ($line -match '^@@REBOOT (.+)$') { $script:RebootList += $Matches[1] }
   elseif ($line -match '^@@HWND (\d+)$') { $script:WorkerHwnd = [IntPtr][long]$Matches[1]; $bCon.Enabled = $script:WorkerHwnd -ne [IntPtr]::Zero }
+  elseif ($line -eq '@@SHOW') { Set-WorkerShown $true }   # 일꾼이 입력을 기다린다(GitHub 로그인) — 이 화면이 꺼내 줘야 앞에 뜨고 버튼 글자도 맞는다
   else { $log.AppendText("$line`r`n") }
 }
 function Read-Progress {
@@ -1001,7 +1055,9 @@ function Read-Progress {
 function Finish-Worker {
   Set-Busy $false
   $script:WorkerHwnd = [IntPtr]::Zero; $bCon.Enabled = $false; $bCon.Text = '진행 창 보기'
-  $log.AppendText("끝났습니다. (기록: %USERPROFILE%\dev-env-setup.log)`r`n")
+  $code = try { $script:Worker.ExitCode } catch { $null }
+  if ($code -ne 0) { $log.AppendText("중간에 멈췄습니다(종료 코드 $code) — 진행 창이 닫혔거나 오류가 났습니다. 다시 설치하면 이미 된 것은 건너뜁니다. (기록: %USERPROFILE%\dev-env-setup.log)`r`n") }
+  else { $log.AppendText("끝났습니다. (기록: %USERPROFILE%\dev-env-setup.log)`r`n") }
   if ($script:RebootList.Count) {
     $msg = "재부팅해야 적용되는 것이 있습니다:`r`n - " + ($script:RebootList -join "`r`n - ") + "`r`n`r`n원격으로 접속 중이면 재부팅하는 동안 연결이 끊깁니다.`r`n지금 재부팅할까요?"
     if ((Show-Msg $msg 'YesNo' 'Question') -eq 'Yes') { Restart-Computer -Force }
@@ -1012,17 +1068,26 @@ $form.Add_FormClosing({
   param($s, $ev)
   if ($script:Worker -and -not $script:Worker.HasExited) {
     if ((Show-Msg '아직 진행 중입니다. 이 화면을 닫으면 진행 창이 나타나 거기서 계속됩니다. 닫을까요?' 'YesNo') -ne 'Yes') { $ev.Cancel = $true }
-    else { Set-WorkerShown $true }
+    else {
+      # 일꾼이 아직 창을 알리지 않았으면(막 시작) 잠깐 기다린다 — 꺼내 보이지 못하면 설치가 안 보이는 채로 계속된다
+      $sw = [Diagnostics.Stopwatch]::StartNew()
+      while ($script:WorkerHwnd -eq [IntPtr]::Zero -and -not $script:Worker.HasExited -and $sw.Elapsed.TotalSeconds -lt 10) { Read-Progress; Start-Sleep -Milliseconds 200 }
+      try { [IO.File]::WriteAllText("$script:Prog.closed", '') } catch {}   # 일꾼이 끝날 때 창을 바로 닫지 않고 결과를 보여 주게
+      Set-WorkerShown $true
+    }
   }
 })
 
 # ── git (앱 추가·소스 올리기) ───────────────────────────────────────
-function Invoke-Git($dir, [string[]]$argList, [int]$sec = 60) {
+function Invoke-Git($dir, [string[]]$argList, [int]$sec = 60, [switch]$Bytes) {
   Refresh-Path
   $exe = (Get-Command git.exe -EA 0).Source
   if (-not $exe) { return @{ Code = -1; Out = ''; Err = 'git 이 없습니다 — ⑤ 의 Git 을 먼저 설치하세요' } }
+  $oldPrompt = $env:GIT_TERMINAL_PROMPT; $oldEditor = $env:GIT_EDITOR   # 이 git 에만 — 끝나면 되돌린다(직접 실행한 셸·나중에 띄우는 일꾼에 남지 않게)
   $env:GIT_TERMINAL_PROMPT = '0'   # 콘솔에서 비밀번호를 묻다 멈추지 않게 — GitHub 로그인은 Git 자격 증명 창이 띄운다
-  $r = Invoke-Timed $exe (@('-C', (Quote-Arg $dir)) + @($argList | ForEach-Object { Quote-Arg $_ })) $sec
+  $env:GIT_EDITOR = 'true'   # 편집기를 띄우지 않는다(커밋 메시지는 -F) — 셸에서 물려받은 GIT_EDITOR(code --wait 등)가 rebase --continue 를 멈추지 않게
+  try { $r = Invoke-Timed $exe (@('-C', (Quote-Arg $dir)) + @($argList | ForEach-Object { Quote-Arg $_ })) $sec -Bytes:$Bytes }
+  finally { $env:GIT_TERMINAL_PROMPT = $oldPrompt; $env:GIT_EDITOR = $oldEditor }
   if (-not $r) { return @{ Code = -1; Out = ''; Err = "git 이 ${sec}초 안에 끝나지 않았습니다" } }
   return $r
 }
@@ -1039,10 +1104,30 @@ function Invoke-GitPush($dir, [bool]$hasUpstream) {
   $p = Invoke-Git $dir $push 180
   if ($p.Code -eq 0) { return @{ Ok = $true; Text = '' } }
   if ($hasUpstream -and (Get-GitText $p) -match 'rejected|fetch first|non-fast-forward') {
-    $pl = Invoke-Git $dir @('pull', '--rebase', '-q') 180
+    $pl = Invoke-Git $dir @('pull', '--rebase', '--autostash', '-q') 180   # --autostash: 커밋하지 않은 다른 수정이 있어도 받는다(잠시 치웠다 되돌린다)
+    # dev-env 의 windows/version.txt(설치 프로그램 버전 = 커밋 시각)는 양쪽 PC 가 커밋마다 고치는 파일 — 그것만 충돌했으면 지금 시각으로 정하고 이어 간다
+    # (다른 충돌, 다른 프로젝트의 version.txt 는 그대로 되돌린다)
+    $own = (Test-Path -LiteralPath (Join-Path $dir 'windows\setup.ps1')) -and (Test-Path -LiteralPath (Join-Path $dir 'windows\version.txt'))
+    for ($k = 0; $own -and $pl.Code -ne 0 -and $k -lt 20; $k++) {
+      $un = Invoke-Git $dir @('-c', 'core.quotepath=false', 'diff', '--name-only', '--diff-filter=U')
+      if ($un.Code -ne 0 -or $un.Out.Trim() -ne 'windows/version.txt') { break }
+      [IO.File]::WriteAllText((Join-Path $dir 'windows\version.txt'), (Get-Date -Format 'yyyy-MM-dd HH:mm') + "`n")
+      [void](Invoke-Git $dir @('add', '--', 'windows/version.txt'))
+      $pl = Invoke-Git $dir @('-c', 'core.editor=true', 'rebase', '--continue') 180
+    }
     if ($pl.Code -ne 0) { [void](Invoke-Git $dir @('rebase', '--abort')); return @{ Ok = $false; Text = "GitHub 에 먼저 올라간 것과 같은 곳을 고쳐 합치지 못했습니다 — 직접 정리가 필요합니다:`r`n$(Get-GitText $pl)" } }
+    # 받기는 됐지만 치워 둔 커밋 안 한 수정을 되돌리다 받은 것과 겹쳤으면(autostash 충돌) — 그 파일에 <<<<<<< 표시가 남고 원래 수정은 stash 에 있다.
+    # 알리고, '합치지 못함(UU)' 표시는 풀어 둔다(파일 내용·stash 는 그대로)
+    $note = ''
+    $cf = Invoke-Git $dir @('-c', 'core.quotepath=false', 'diff', '--name-only', '--diff-filter=U')   # 한글 이름이 "\353…" 로 바뀌면 reset 이 그 파일을 못 찾는다
+    $cfl = @($cf.Out -split "`r?`n" | Where-Object { $_.Trim() })
+    if ($cf.Code -eq 0 -and $cfl.Count) {
+      [void](Invoke-Git $dir (@('reset', '-q', '--') + $cfl))
+      $note = "`r`n주의: 커밋하지 않은 수정($($cfl -join ', '))이 받은 것과 겹쳐 그 파일에 충돌 표시(<<<<<<< … >>>>>>>)가 남았습니다 — 직접 고치세요. 원래 수정은 'git stash list' 의 autostash 에 있습니다."
+    }
     $p = Invoke-Git $dir $push 180
-    if ($p.Code -eq 0) { return @{ Ok = $true; Text = '(GitHub 에 먼저 올라간 것을 받아 합친 뒤 올림)' } }
+    if ($p.Code -eq 0) { return @{ Ok = $true; Text = "(GitHub 에 먼저 올라간 것을 받아 합친 뒤 올림)$note" } }
+    return @{ Ok = $false; Text = "$(Get-GitText $p)$note" }
   }
   return @{ Ok = $false; Text = Get-GitText $p }
 }
@@ -1066,21 +1151,37 @@ function Add-CatalogLine($file, $group, $line) {
 function Publish-CatalogLine($group, $line, $what) {
   $rp = Find-EditRepo
   if (-not $rp) { return @{ Ok = $false; Pushed = $false; NoRepo = $true; Text = "이 PC 에 dev-env 저장소($DevRoot\dev-env)가 없어 GitHub 목록에는 올리지 못했습니다 — 이번 설치 화면에만 넣었습니다.`r`n(⑥ 개발 소스의 dev-env 를 받은 뒤 다시 추가하면 모든 PC 에 나옵니다)" } }
+  # git diff --quiet: 0 = 바뀐 것 없음 · 1 = 있음 · 그 밖(git 없음·시간 초과 -1 등) = 확인 못 함
   $r = Invoke-Git $rp @('diff', '--cached', '--quiet')
-  if ($r.Code -ne 0) { return @{ Ok = $false; Text = "$rp 에 커밋을 기다리는 다른 변경이 있어 건드리지 않았습니다 — 그것부터 정리하세요." } }
-  $r = Invoke-Git $rp @('diff', '--quiet', '--', 'catalog.txt')
-  if ($r.Code -ne 0) { return @{ Ok = $false; Text = "$rp\catalog.txt 에 올리지 않은 수정이 있어 건드리지 않았습니다 — 그것부터 올리거나 되돌리세요." } }
+  if ($r.Code -eq 1) { return @{ Ok = $false; Text = "$rp 에 커밋을 기다리는 다른 변경이 있어 건드리지 않았습니다 — 그것부터 정리하세요." } }
+  if ($r.Code -ne 0) { return @{ Ok = $false; Text = "git 으로 $rp 를 확인하지 못했습니다:`r`n$(Get-GitText $r)" } }
+  $r = Invoke-Git $rp @('diff', '--quiet', '--', 'catalog.txt', 'windows/version.txt')
+  if ($r.Code -eq 1) { return @{ Ok = $false; Text = "$rp 의 catalog.txt·version.txt 에 올리지 않은 수정이 있어 건드리지 않았습니다 — 그것부터 올리거나 되돌리세요." } }
+  if ($r.Code -ne 0) { return @{ Ok = $false; Text = "git 으로 $rp 를 확인하지 못했습니다:`r`n$(Get-GitText $r)" } }
+  # 모든 PC 가 받는 곳은 GitHub 의 main — 다른 브랜치에 있으면 올려도 아무 PC 에도 안 보인다
+  $u = Invoke-Git $rp @('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}')
+  if ($u.Code -ne 0 -or $u.Out.Trim() -ne 'origin/main') { return @{ Ok = $false; Text = "$rp 가 main(origin/main) 이 아닌 곳에 있어 건드리지 않았습니다 — main 으로 돌아온 뒤 다시 추가하세요." } }
   $r = Invoke-Git $rp @('pull', '--ff-only', '-q') 120
   if ($r.Code -ne 0) { return @{ Ok = $false; Text = "GitHub 최신 목록을 받지 못해 넣지 않았습니다:`r`n$(Get-GitText $r)" } }
+  # 이 화면을 연 뒤 다른 PC 가 같은 앱을 먼저 올렸을 수 있다 — 방금 받은 목록으로 한 번 더 본다
+  if ($line.Split('|')[2].Trim() -match '^(winget|msstore):([^@]+)') {
+    $newId = $Matches[2]
+    $have = Get-Content (Join-Path $rp 'catalog.txt') -Encoding UTF8 | Where-Object { $_ -notmatch '^\s*#' -and $_.Split('|').Count -ge 3 -and $_.Split('|')[2].Trim() -match '^(winget|msstore):([^@]+)' -and $Matches[2] -eq $newId } | Select-Object -First 1
+    if ($have) { return @{ Ok = $false; Text = "GitHub 최신 목록에 이미 있습니다(다른 PC 에서 먼저 추가): $have`r`n설치 화면을 다시 열면 보입니다." } }
+  }
   Add-CatalogLine (Join-Path $rp 'catalog.txt') $group $line
   # 버전 = 지금 시각 (저장소의 커밋 훅과 같은 형식 — 훅이 없는 PC 에서도 설치 화면 제목에 새 버전이 보이게)
   [IO.File]::WriteAllText((Join-Path $rp 'windows\version.txt'), (Get-Date -Format 'yyyy-MM-dd HH:mm') + "`n")
   [void](Invoke-Git $rp @('add', '--', 'catalog.txt', 'windows/version.txt'))
   $c = Invoke-GitCommit $rp "앱 추가 — $what"
-  if ($c.Code -ne 0) { return @{ Ok = $true; Pushed = $false; Repo = $rp; Text = "목록에는 넣었지만 커밋하지 못했습니다:`r`n$(Get-GitText $c)" } }
+  if ($c.Code -ne 0) {
+    # 커밋을 못 하면(이 PC 에 git 이름·메일이 없다 등) 넣은 줄을 되돌린다 — 담긴 채 남으면 다음 '앱 추가' 가 모두 막힌다
+    [void](Invoke-Git $rp @('checkout', 'HEAD', '--', 'catalog.txt', 'windows/version.txt'))
+    return @{ Ok = $false; Text = "커밋하지 못해 목록을 되돌렸습니다 — ⑤ 'git 기본 설정' 을 먼저 하세요:`r`n$(Get-GitText $c)" }
+  }
   $p = Invoke-GitPush $rp $true
   if (-not $p.Ok) { return @{ Ok = $true; Pushed = $false; Repo = $rp; Text = "커밋은 했지만 GitHub 에 올리지 못했습니다 — 나중에 '소스 올리기' 로 dev-env 를 올리세요:`r`n$($p.Text)" } }
-  return @{ Ok = $true; Pushed = $true; Repo = $rp; Text = 'GitHub 에 올렸습니다 — 다른 PC 의 설치 화면에도 이 앱이 나옵니다.' }
+  return @{ Ok = $true; Pushed = $true; Repo = $rp; Text = "GitHub 에 올렸습니다 — 다른 PC 의 설치 화면에도 이 앱이 나옵니다.$(if ($p.Text) { "`r`n$($p.Text)" })" }
 }
 function Show-AddApp {
   if (-not (Test-Winget)) { [void](Show-Msg 'winget 이 없습니다 — ④ 도구·앱 의 winget 을 먼저 설치하세요.'); return }
@@ -1148,9 +1249,9 @@ function Show-AddApp {
     [System.Windows.Forms.Application]::DoEvents()
     $res = Publish-CatalogLine $g $st.Line "$name ($($st.How))"
     if (-not $res.Ok -and -not $res.NoRepo) { $bFind.Enabled = $true; & $upd; [void](Show-Msg $res.Text 'OK' 'Warning'); return }
-    # 이번 설치 화면과 일꾼이 읽는 목록(이 설치 프로그램 폴더의 catalog.txt)에도 넣는다
-    $here = Join-Path $Repo 'catalog.txt'
-    if (-not $res.Repo -or (Resolve-Path -LiteralPath $Repo).Path -ne $res.Repo) { Add-CatalogLine $here $g $st.Line }
+    # 이 설치 프로그램이 저장소 밖(한 줄 설치·USB)에서 돌면 일꾼이 읽을 수 있게 이번 설치 화면의 catalog.local(%TEMP%)에도 넣는다
+    # (catalog.txt 는 받은 그대로 둔다 — USB 예비판에 GitHub 에 없는 줄이 섞이지 않게)
+    if ((-not $res.Repo -or (Resolve-Path -LiteralPath $Repo).Path -ne $res.Repo) -and $env:DEV_ENV_CATALOG_LOCAL) { [IO.File]::AppendAllText($env:DEV_ENV_CATALOG_LOCAL, "$($st.Line)`r`n", (New-Object Text.UTF8Encoding $false)) }
     $e = [pscustomobject]@{ Group = $g; Name = $name; How = $st.How; On = $on.Checked; Hint = '' }
     $script:Catalog = @($Catalog) + $e
     Add-CatalogItem $e
@@ -1160,7 +1261,7 @@ function Show-AddApp {
     $node.Parent.Expand(); $node.EnsureVisible(); $tv.SelectedNode = $node
     $log.AppendText("앱 추가: $($st.Line)`r`n")
     $tail = if ($it.Installed) { '이 PC 에는 이미 설치돼 있습니다.' } else { "설치 화면에 체크된 채로 넣었습니다 — '선택한 것 설치' 로 이 PC 에 시험 설치할 수 있습니다." }
-    [void](Show-Msg "$($res.Text)`r`n`r`n$tail" 'OK' $(if ($res.Pushed) { 'Information' } else { 'Warning' }))
+    [void](Show-Msg "$($res.Text)`r`n`r`n$tail" 'OK' $(if ($res.Pushed -and $res.Text -notmatch '주의:') { 'Information' } else { 'Warning' }))
     $d.Close()
   })
   [void]$d.ShowDialog($form)
@@ -1175,7 +1276,7 @@ $SecretRules = @(
   @{ Re = 'gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}'; What = 'GitHub 토큰'; Block = $true }
   @{ Re = 'xox[abprs]-[A-Za-z0-9-]{10,}'; What = 'Slack 토큰'; Block = $true }
   @{ Re = 'sk-ant-[A-Za-z0-9_\-]{20,}'; What = 'Anthropic API 키'; Block = $true }
-  @{ Re = 'sk-(proj-)?[A-Za-z0-9_\-]{32,}'; What = 'OpenAI API 키'; Block = $true }
+  @{ Re = '(?<![A-Za-z0-9_\-])sk-(?!ant-)(proj-)?[A-Za-z0-9_\-]{32,}'; What = 'OpenAI API 키'; Block = $true }   # 낱말 중간(mask-…·task-…)은 아니다
   @{ Re = '[sr]k_live_[0-9A-Za-z]{20,}'; What = 'Stripe 키'; Block = $true }
   @{ Re = 'npm_[A-Za-z0-9]{36}'; What = 'npm 토큰'; Block = $true }
   @{ Re = '"type"\s*:\s*"service_account"'; What = '구글 서비스 계정 키 파일'; Block = $true }
@@ -1185,7 +1286,7 @@ $SecretRules = @(
 )
 # 이름만 봐도 비밀정보인 파일(.env·키 파일) — 막는다. 예시 파일(.env.example 등)은 괜찮다
 function Test-SecretName($path) {
-  $n = [IO.Path]::GetFileName($path).ToLower()
+  $n = ($path.Trim() -split '[\\/]')[-1].ToLower()   # [IO.Path]::GetFileName 은 탭·따옴표가 든 이름에서 오류가 난다
   ($n -match '^\.env(\..+)?$' -and $n -notmatch '\.(example|sample|template|dist)$') -or $n -match '\.(pem|key|pfx|p12|jks|keystore)$' -or $n -match '^id_(rsa|dsa|ecdsa|ed25519)$'
 }
 function Find-DevRepos {
@@ -1234,7 +1335,7 @@ function Find-SecretsIn([string]$text, [string]$file, [switch]$Diff) {
       if ($Diff) {
         if ($text[$ls] -ne '+' -or ($ls + 4 -le $text.Length -and $text.Substring($ls, 4) -eq '+++ ')) { continue }
         $fs = $text.LastIndexOf("`n+++ ", [Math]::Max(0, $ls - 1))
-        if ($fs -ge 0) { $fe = $text.IndexOf("`n", $fs + 1); $f = $text.Substring($fs + 5, $fe - $fs - 5).TrimEnd("`r"); if ($f.StartsWith('b/')) { $f = $f.Substring(2) } }
+        if ($fs -ge 0) { $fe = $text.IndexOf("`n", $fs + 1); $f = $text.Substring($fs + 5, $fe - $fs - 5).TrimEnd("`r", "`t"); if ($f.StartsWith('b/')) { $f = $f.Substring(2) } }   # 빈칸이 든 이름은 git 이 끝에 탭을 붙인다
         $hs = $text.LastIndexOf("`n@@ ", [Math]::Max(0, $ls - 1))
         if ($hs -ge 0 -and $text.Substring($hs + 1, [Math]::Min(80, $text.Length - $hs - 1)) -match '^@@ -\S+ \+(\d+)') {
           $he = $text.IndexOf("`n", $hs + 1) + 1
@@ -1246,31 +1347,78 @@ function Find-SecretsIn([string]$text, [string]$file, [switch]$Diff) {
     }
   }
 }
+# 파일 하나를 직접 읽어 검사 — UTF-16(.reg 등)은 풀어 읽고, 못 읽는 파일(2MB 넘는 것·이진)은 말없이 건너뛰지 않고 '의심' 으로 보인다(그림·압축 같은 이진 파일은 빼고)
+# $rev 를 주면 작업 폴더가 아니라 그 커밋에 담긴 판을 읽는다 — 안 올린 커밋에 넣었다가 나중 커밋에서 지운 것도 올라가기 때문
+function Test-FileSecrets($dir, [string]$path, [string]$rev) {
+  $bin = $path -match '\.(png|jpe?g|gif|bmp|ico|webp|pdf|zip|7z|rar|gz|exe|dll|msi|woff2?|ttf|otf|eot|mp[34]|wav|mov|avi|mkv|psd|db|sqlite)$'
+  $where = if ($rev) { "$path (커밋 $($rev.Substring(0, 7)))" } else { $path }
+  $b = $null; $size = -1
+  if ($rev) {
+    $s = Invoke-Git $dir @('cat-file', '-s', "${rev}:$path")
+    if ($s.Code -eq 0) { $size = [long]$s.Out.Trim() }
+    if ($size -ge 0 -and $size -le 2MB) { $x = Invoke-Git $dir @('cat-file', 'blob', "${rev}:$path") 60 -Bytes; if ($x.Code -eq 0) { $b = $x.Bytes } }
+  } else {
+    $fi = Get-Item -LiteralPath (Join-Path $dir $path) -Force -EA 0
+    if ($fi -and $fi.PSIsContainer) { return }
+    if ($fi) { $size = $fi.Length; if ($size -le 2MB) { $b = [IO.File]::ReadAllBytes($fi.FullName) } }
+  }
+  if ($size -gt 2MB) { if (-not $bin) { [pscustomobject]@{ File = $where; Line = 0; What = '2MB 넘는 파일 — 내용은 검사하지 못했습니다(직접 확인)'; Block = $false; Peek = '' } }; return }
+  $text = $null
+  if ($null -ne $b) {
+    if ($b.Length -ge 2 -and $b[0] -eq 0xFF -and $b[1] -eq 0xFE) { $text = [Text.Encoding]::Unicode.GetString($b, 2, $b.Length - 2) }   # UTF-16 (.reg 등)
+    elseif ($b.Length -ge 2 -and $b[0] -eq 0xFE -and $b[1] -eq 0xFF) { $text = [Text.Encoding]::BigEndianUnicode.GetString($b, 2, $b.Length - 2) }
+    elseif ([Array]::IndexOf($b, [byte]0, 0, [Math]::Min($b.Length, 8000)) -lt 0) { $text = [Text.Encoding]::UTF8.GetString($b) }
+  }
+  if ($null -eq $text) { if (-not $bin) { [pscustomobject]@{ File = $where; Line = 0; What = '이진 파일 — 내용은 검사하지 못했습니다(직접 확인)'; Block = $false; Peek = '' } }; return }
+  Find-SecretsIn $text $where
+}
 # 한 저장소 검사: 아직 안 올린 커밋 + 지금 바뀐 파일(+ 새 파일 전체)
 function Test-RepoSecrets($r) {
   $hits = @()
   $diffs = @()
   if ($r.HasHead) {
-    $diffs += (Invoke-Git $r.Dir @('log', '-p', '-U0', '--no-color', '--no-ext-diff', '--format=', $(if ($r.Upstream) { '@{u}..HEAD' } else { 'HEAD' })) 180).Out
-    $diffs += (Invoke-Git $r.Dir @('diff', 'HEAD', '-U0', '--no-color', '--no-ext-diff') 120).Out
+    # git 이 실패하거나 시간 안에 못 끝내면 '걸린 것 없음' 이 아니라 '검사 못 함'(막음)
+    # core.quotepath=false: 한글 파일 이름이 "\355…" 로 바뀌어 이름 검사에서 빠지지 않게 · --no-renames: 이름만 바꾼 파일(예: 설정 → .env)도 새 파일로 보이게
+    foreach ($g in @(@{ N = 'log'; S = 180; A = @('-c', 'core.quotepath=false', 'log', '-p', '-U0', '--no-renames', '--no-color', '--no-ext-diff', '--format=commit %H', $(if ($r.Upstream) { '@{u}..HEAD' } else { 'HEAD' })) },
+                     @{ N = 'diff'; S = 120; A = @('-c', 'core.quotepath=false', 'diff', 'HEAD', '-U0', '--no-renames', '--no-color', '--no-ext-diff') })) {
+      $x = Invoke-Git $r.Dir $g.A $g.S
+      if ($x.Code -eq 0) { $diffs += $x.Out } else { $hits += [pscustomobject]@{ File = "(git $($g.N))"; Line = 0; What = "검사하지 못했습니다 — $(Get-GitText $x)"; Block = $true; Peek = '' } }
+    }
   }
-  $names = @()
-  foreach ($t in $diffs) { if ($t) { $hits += @(Find-SecretsIn $t '' -Diff); $names += @([regex]::Matches($t, '(?m)^\+\+\+ b/(.+?)\r?$') | ForEach-Object { $_.Groups[1].Value }) } }
+  $names = @(); $binFiles = [ordered]@{}
+  foreach ($t in $diffs) {
+    if (-not $t) { continue }
+    $hits += @(Find-SecretsIn $t '' -Diff)
+    $names += @([regex]::Matches($t, '(?m)^\+\+\+ b/([^\t\r\n]+)') | ForEach-Object { $_.Groups[1].Value })   # 빈칸이 든 이름은 git 이 끝에 탭을 붙인다
+    # git 이 이진으로 본 파일(UTF-16 .reg 등)은 diff 에 '+' 줄이 없다 — 아래에서 직접 읽는다.
+    # 안 올린 커밋(log)은 'commit <해시>' 줄로 어느 커밋의 판인지 안다 · 지금 바뀐 것(diff HEAD)은 작업 폴더를 읽는다
+    $rev = ''
+    # (--no-renames 라 a/ 와 b/ 경로가 같다 — 역참조로 맞춰야 ' and b/' 가 든 폴더 이름에서도 바르게 끊는다. 지운 파일 'a/… and /dev/null' 은 건너뜀)
+    foreach ($m in [regex]::Matches($t, '(?m)^(?:commit ([0-9a-f]{40,64})|Binary files (?:a/(.+) and b/\2|/dev/null and b/(.+?)) differ)\r?$')) {
+      if ($m.Groups[1].Success) { $rev = $m.Groups[1].Value; continue }
+      $bp = if ($m.Groups[2].Success) { $m.Groups[2].Value } else { $m.Groups[3].Value }; $names += $bp
+      $binFiles["$rev|$bp"] = @{ Rev = $rev; Path = $bp }
+    }
+  }
+  $untracked = @($r.Files | Where-Object { $_.XY -eq '??' } | ForEach-Object { $_.Path })
   foreach ($f in $r.Files) {
     if ($f.XY -match 'D') { continue }
     $names += $f.Path
-    if ($f.XY -ne '??' -and $r.HasHead) { continue }   # 추적 중인 파일은 위 diff 로 봤다
-    $p = Join-Path $r.Dir $f.Path
-    $fi = Get-Item -LiteralPath $p -Force -EA 0
-    if (-not $fi -or $fi.PSIsContainer -or $fi.Length -gt 2MB) { continue }
-    $b = [IO.File]::ReadAllBytes($p)
-    if ([Array]::IndexOf($b, [byte]0, 0, [Math]::Min($b.Length, 8000)) -ge 0) { continue }   # 그림 같은 이진 파일
-    $hits += @(Find-SecretsIn ([Text.Encoding]::UTF8.GetString($b)) $f.Path)
+    if ($f.XY -ne '??' -and $r.HasHead) { continue }   # 추적 중인 파일은 위 diff 로 봤다(이진이면 아래에서)
+    $hits += @(Test-FileSecrets $r.Dir $f.Path)
   }
-  foreach ($n in ($names | Select-Object -Unique)) { if (Test-SecretName $n) { $hits += [pscustomobject]@{ File = $n; Line = 0; What = '비밀정보 파일 (.env·키 파일) — .gitignore 에 넣으세요'; Block = $true; Peek = '' } } }
+  foreach ($bf in $binFiles.Values) { $hits += @(Test-FileSecrets $r.Dir $bf.Path $bf.Rev) }
+  foreach ($n in ($names | Select-Object -Unique)) {
+    if (-not (Test-SecretName $n)) { continue }
+    # 이미 추적 중인 파일은 .gitignore 로 빠지지 않는다 — git rm --cached 를 알려 준다
+    $what = if ($n -in $untracked) { '비밀정보 파일 (.env·키 파일) — .gitignore 에 넣으세요' } else { "비밀정보 파일 (.env·키 파일) — 이미 git 이 추적하는 파일이라 .gitignore 만으로는 빠지지 않습니다: git rm --cached `"$n`" 한 뒤 .gitignore 에 넣으세요" }
+    $hits += [pscustomobject]@{ File = $n; Line = 0; What = $what; Block = $true; Peek = '' }
+  }
   $hits
 }
 function Show-Upload {
+  Refresh-Path
+  if (-not (Get-Command git.exe -EA 0)) { [void](Show-Msg 'git 이 없습니다 — ⑤ 의 Git 을 먼저 설치하세요.'); return }
   $repos = @(Find-DevRepos)
   if (-not $repos) { [void](Show-Msg "$DevRoot 에 git 프로젝트가 없습니다."); return }
   $st = @{ States = @(); Scan = $null }
@@ -1294,6 +1442,12 @@ function Show-Upload {
   $bX.DialogResult = 'Cancel'
   $d.Controls.AddRange(@($lv, $bScan, $hint, $rep, $l1, $cm, $ack, $bPush, $bX))
   $d.CancelButton = $bX
+  # 화면이 작으면 창을 줄인다 — 결과 칸이 줄고 아래 버튼은 늘 보인다 (설치 화면과 같은 방법)
+  $rep.Anchor = 'Top,Bottom,Left,Right'; $lv.Anchor = 'Top,Left,Right'; $hint.Anchor = 'Top,Left,Right'
+  $l1.Anchor = 'Bottom,Left'; $cm.Anchor = 'Bottom,Left,Right'; $ack.Anchor = 'Bottom,Left,Right'; $bPush.Anchor = 'Bottom,Right'; $bX.Anchor = 'Bottom,Right'
+  $wa = [System.Windows.Forms.Screen]::FromPoint([System.Windows.Forms.Cursor]::Position).WorkingArea
+  if ($d.Height -gt $wa.Height) { $d.Height = $wa.Height }
+  if ($d.Width -gt $wa.Width) { $d.Width = $wa.Width }
 
   $fill = {
     $st.States = @(foreach ($dir in $repos) { Get-RepoState $dir })
@@ -1310,12 +1464,13 @@ function Show-Upload {
   $reset = { $st.Scan = $null; $bPush.Enabled = $false; $ack.Checked = $false; $ack.Enabled = $false }
   $canPush = { $bPush.Enabled = [bool]$st.Scan -and -not $st.Scan.Block -and (-not $st.Scan.Warn -or $ack.Checked) }
   $scan = {
-    $pick = @($lv.CheckedItems | ForEach-Object { $_.Tag } | Where-Object { $_.Origin -and ($_.Files.Count -or $_.Ahead) })
+    # 검사할 때마다 지금 상태를 다시 읽는다 — 창을 연 뒤 바뀐 파일·새 파일까지 보고, 올리기 직전 대조와도 맞게
+    $pick = @(@($lv.CheckedItems) | ForEach-Object { $s = Get-RepoState $_.Tag.Dir; $_.Tag = $s; $_.SubItems[1].Text = [string]$s.Files.Count; $_.SubItems[2].Text = [string]$s.Ahead; $s } | Where-Object { $_.Origin -and ($_.Files.Count -or $_.Ahead) })
     if (-not $pick) { $rep.Text = '올릴 것이 있는 프로젝트(바뀐 파일·안 올린 커밋)를 체크하세요.'; return $null }
     $sb = New-Object Text.StringBuilder; $block = $false; $warn = $false
     foreach ($r in $pick) {
       $rep.Text = "검사 중: $($r.Name) ..."; [System.Windows.Forms.Application]::DoEvents()
-      [void]$sb.AppendLine("■ $($r.Name)  →  $($r.Origin)")
+      [void]$sb.AppendLine("■ $($r.Name)  →  $($r.Origin)$(if ($r.Upstream) { "  ($($r.Upstream))" })")   # 올라가는 곳 = 괄호 안 브랜치
       [void]$sb.AppendLine("   바뀐 파일 $($r.Files.Count)개 · 안 올린 커밋 $($r.Ahead)개")
       foreach ($f in $r.Files | Select-Object -First 300) { [void]$sb.AppendLine("     $($f.XY)  $($f.Path)") }
       if ($r.Files.Count -gt 300) { [void]$sb.AppendLine("     … 외 $($r.Files.Count - 300)개") }
@@ -1335,7 +1490,9 @@ function Show-Upload {
   }
   $bScan.Add_Click({
     $bScan.Enabled = $false; & $reset
-    try { $st.Scan = & $scan; $ack.Enabled = [bool]$st.Scan -and $st.Scan.Warn -and -not $st.Scan.Block; & $canPush } finally { $bScan.Enabled = $true }
+    try { $st.Scan = & $scan; $ack.Enabled = [bool]$st.Scan -and $st.Scan.Warn -and -not $st.Scan.Block; & $canPush }
+    catch { $st.Scan = $null; $rep.Text = "검사하지 못했습니다: $($_.Exception.Message)" }   # 오류 창(끝내기 누르면 설치 화면까지 닫힘) 대신 여기에
+    finally { $bScan.Enabled = $true }
   })
   $lv.Add_ItemChecked({ & $reset })
   $ack.Add_CheckedChanged({ & $canPush })
@@ -1361,7 +1518,9 @@ function Show-Upload {
       & $fill; & $reset
       $rep.Text = $out.ToString()
       $log.AppendText("소스 올리기:`r`n$($out.ToString())")
-    } finally { $bScan.Enabled = $true }
+    }
+    catch { & $reset; $rep.AppendText("`r`n오류로 멈췄습니다: $($_.Exception.Message)`r`n") }
+    finally { $bScan.Enabled = $true }
   })
   & $fill
   [void]$d.ShowDialog($form)
@@ -1379,5 +1538,17 @@ if ($Snapshot) {
   $bmp.Save($Snapshot); $form.Close(); return
 }
 if ($script:Splash) { $script:Splash.Close(); $script:Splash.Dispose(); $script:Splash = $null }   # '준비 중' 창을 닫고 설치 화면으로
-$form.Add_Shown({ $form.Activate() })
+# USB 시작하기(start.ps1)는 이 화면이 뜬 '뒤에' USB 예비판을 이 버전으로 맞춘다 — 그동안(최대 1분) 관리 > USB 항목 상태를 다시 본다
+$script:UsbTries = 0
+$usbTimer = New-Object System.Windows.Forms.Timer; $usbTimer.Interval = 2000
+$usbTimer.Add_Tick({
+  $script:UsbTries++
+  $n = $NodeById['usbkit']
+  if ($n -and -not $n.Tag.Installed -and -not $script:Worker) {
+    $n.Tag.Installed = Invoke-Check $n.Tag
+    if ($n.Tag.Installed) { Set-NodeLook $n; $script:Busy = $true; $n.Checked = $false; Sync-Up $n.Parent; $script:Busy = $false }
+  }
+  if (-not $n -or $n.Tag.Installed -or $script:Worker -or $script:UsbTries -ge 30) { $usbTimer.Stop() }
+})
+$form.Add_Shown({ $form.Activate(); if ($Usb) { $usbTimer.Start() } })
 [void]$form.ShowDialog()

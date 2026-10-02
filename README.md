@@ -12,7 +12,7 @@ GitHub 에서 받지 못하면 USB 에 저장된 마지막 판(`last-good`, 잘 
 **버전 확인**: 설치 화면 제목·진행 창·USB 맨 위 `버전 ….txt` 파일 이름에 같은 버전(예: `2026-10-02 00:45`)이 보인다.
 버전은 `windows/version.txt` 이고, 설치 파일이 바뀌는 커밋마다 그 시각으로 자동으로 바뀐다(`.git/hooks/pre-commit`).
 
-**Windows — 인터넷이 되는 PC**: 바탕화면의 `PC 설치 (GitHub)` 바로가기, 또는 PowerShell 에 붙여넣기
+**Windows — 인터넷이 되는 PC**: PowerShell 에 붙여넣기 (이 한 줄을 바탕화면 바로가기로 만들어 두면 편하다 — 예: DEV 의 `PC 설치 (GitHub)`)
 
 ```powershell
 irm https://raw.githubusercontent.com/devkhh002/dev-env/main/windows/install.ps1 | iex
@@ -43,7 +43,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/devkhh002/dev-env/main/m
 
 **아래 버튼**
 - `앱 추가…` — winget 에서 찾아 고르면 `catalog.txt` 에 한 줄 넣고 커밋·푸시 → 모든 PC 의 설치 화면에 나온다. 넣은 앱은 체크된 채로 목록에 보여 바로 시험 설치할 수 있다.
-- `모두 최신으로` — 설치된 앱을 최신판으로. 버전 고정(`@버전`·⑤ 개발 환경, `setup.ps1` 맨 위 `$UpgradeFixed`)과 Chrome 원격 데스크톱 호스트(`$UpgradeSkip`, 올리는 동안 원격이 끊긴다)는 뺀다. 팟플레이어·HWiNFO 같은 `url:`·`latest:` 앱은 공식 최신 설치본으로.
+- `모두 최신으로` — 설치된 앱을 최신판으로. 버전 고정(`@버전`·⑤ 개발 환경, `setup.ps1` 맨 위 `$UpgradeFixed`)과 원격 호스트(Chrome 원격 데스크톱·Sunshine·Tailscale — `$UpgradeSkip`, 올리는 동안 원격이 끊긴다)는 뺀다. 팟플레이어·HWiNFO 같은 `url:`·`latest:` 앱은 공식 최신 설치본으로.
 - `소스 올리기…` — `C:\dev` 의 git 프로젝트를 고르면 올라갈 파일 목록과 비밀정보 검사 결과를 보여 주고, 막힌 것이 없을 때만 커밋·푸시. 개인 키·토큰·`.env`·키 파일은 막고, 비밀번호처럼 보이는 값·Google API 키는 '확인했다' 를 체크해야 올린다. 검사한 뒤 파일이 바뀌면 다시 검사하게 한다.
 
 - 디펜더·방화벽·업데이트 차단·UAC 같은 **보안 설정은 넣지 않았다** — 필요하면 직접(WSH 등).
