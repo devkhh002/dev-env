@@ -737,6 +737,24 @@ foreach ($line in $projLines) {
 }
 
 # 관리
+# 'PC 설치 (GitHub)' 바로가기 — 누르면 GitHub 에서 이 설치 프로그램 최신판을 받아 연다(한 줄 설치와 같다).
+# 어느 PC 에서나 돌게 '시작 위치' 는 비운다(예전 바로가기는 C:\Users\dev 가 박혀 있었다). 설치를 마친 PC 바탕화면과 USB 맨 위에 둔다
+$SetupLnkName = 'PC 설치 (GitHub).lnk'
+$SetupLnkArgs = '-NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointManager]::SecurityProtocol = ''Tls12''; irm https://raw.githubusercontent.com/devkhh002/dev-env/main/windows/install.ps1 | iex } catch { Write-Host $_ -ForegroundColor Red; Read-Host ''설치를 시작하지 못했습니다(인터넷 연결 확인). Enter를 누르면 닫습니다'' }"'
+function Test-SetupLnk($path) {
+  if (-not (Test-Path -LiteralPath $path)) { return $false }
+  $s = (New-Object -ComObject WScript.Shell).CreateShortcut($path)
+  ($s.Arguments -eq $SetupLnkArgs) -and -not $s.WorkingDirectory
+}
+function New-SetupLnk($path) {
+  $ps = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+  $s = (New-Object -ComObject WScript.Shell).CreateShortcut($path)
+  $s.TargetPath = $ps; $s.Arguments = $SetupLnkArgs; $s.WorkingDirectory = ''; $s.IconLocation = "$ps,0"; $s.Description = 'GitHub 에서 PC 설치 최신판을 받아 연다'
+  $s.Save()
+}
+Add-Item $G9 setuplnk "바탕화면에 'PC 설치 (GitHub)' 바로가기 — 다음부터 이걸로 최신 설치 화면을 연다" { Test-SetupLnk (Join-Path ([Environment]::GetFolderPath('Desktop')) $SetupLnkName) } {
+  New-SetupLnk (Join-Path ([Environment]::GetFolderPath('Desktop')) $SetupLnkName)
+}
 $UsbKitFiles = [ordered]@{ 'start.ps1' = 'start.ps1'; 'start.cmd' = '시작하기.cmd'; 'README.txt' = '읽어보기.txt' }   # 저장소 usb\ 이름 → USB 이름
 function Get-UsbVersion($k) { Get-Content -LiteralPath "$k\last-good\windows\version.txt" -Encoding UTF8 -EA 0 | Select-Object -First 1 }
 # USB 맨 위의 '버전 ….txt' — 탐색기에서 파일 이름만 보면 이 USB 의 설치 프로그램 버전을 안다
@@ -744,9 +762,10 @@ function Set-UsbMarker($k, $v) {
   Get-ChildItem -LiteralPath $k -Filter '버전 *.txt' -EA 0 | Remove-Item -Force
   [IO.File]::WriteAllText((Join-Path $k ('버전 ' + ($v -replace ':', '.') + '.txt')), "이 USB 에 들어 있는 설치 프로그램 버전: $v`r`n설치 화면 제목에도 같은 버전이 보입니다.`r`n", (New-Object Text.UTF8Encoding $true))
 }
-Add-Item $G9 usbkit "USB 시작하기·예비판을 이 버전($Version)으로 만들기·갱신 (Ventoy USB 의 PC설치)" {
+Add-Item $G9 usbkit "USB 시작하기·바로가기·예비판을 이 버전($Version)으로 (Ventoy USB 의 PC설치)" {
   $k = Find-UsbKit
-  [bool]$k -and ((Get-UsbVersion $k) -eq $Version) -and -not ($UsbKitFiles.Keys | Where-Object { -not (Test-Path -LiteralPath "$k\$($UsbKitFiles[$_])") -or (Get-FileHash -LiteralPath "$k\$($UsbKitFiles[$_])").Hash -ne (Get-FileHash "$PSScriptRoot\usb\$_").Hash })
+  [bool]$k -and ((Get-UsbVersion $k) -eq $Version) -and -not ($UsbKitFiles.Keys | Where-Object { -not (Test-Path -LiteralPath "$k\$($UsbKitFiles[$_])") -or (Get-FileHash -LiteralPath "$k\$($UsbKitFiles[$_])").Hash -ne (Get-FileHash "$PSScriptRoot\usb\$_").Hash }) -and
+    (Test-SetupLnk (Join-Path ([IO.Path]::GetPathRoot($k)) $SetupLnkName))
 } {
   $k = Find-UsbKit
   if (-not $k) {
@@ -756,6 +775,7 @@ Add-Item $G9 usbkit "USB 시작하기·예비판을 이 버전($Version)으로 �
   }
   New-Item -ItemType Directory "$k\네트워크 드라이버", "$k\도구" -Force | Out-Null
   foreach ($src in $UsbKitFiles.Keys) { Copy-Item "$PSScriptRoot\usb\$src" "$k\$($UsbKitFiles[$src])" -Force }
+  New-SetupLnk (Join-Path ([IO.Path]::GetPathRoot($k)) $SetupLnkName)   # USB 맨 위 — 랜 드라이버를 직접 깐 새 PC 는 이것만 눌러도 된다
   # 예비판(last-good) = 지금 돌고 있는 이 설치 프로그램 그대로(files.txt 목록)
   foreach ($f in Get-Content "$PSScriptRoot\files.txt" -Encoding UTF8 | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' }) {
     $f = $f.Trim(); $dst = Join-Path "$k\last-good" ($f -replace '/', '\')

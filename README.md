@@ -12,7 +12,7 @@ GitHub 에서 받지 못하면 USB 에 저장된 마지막 판(`last-good`, 잘 
 **버전 확인**: 설치 화면 제목·진행 창·USB 맨 위 `버전 ….txt` 파일 이름에 같은 버전(예: `2026-10-02 00:45`)이 보인다.
 버전은 `windows/version.txt` 이고, 설치 파일이 바뀌는 커밋마다 그 시각으로 자동으로 바뀐다(`.git/hooks/pre-commit`).
 
-**Windows — 인터넷이 되는 PC**: PowerShell 에 붙여넣기 (이 한 줄을 바탕화면 바로가기로 만들어 두면 편하다 — 예: DEV 의 `PC 설치 (GitHub)`)
+**Windows — 인터넷이 되는 PC (랜 드라이버를 깐 새 PC 포함)**: `PC 설치 (GitHub)` 바로가기 — USB 맨 위에 있고, 설치를 마친 PC 바탕화면에도 설치 화면이 만들어 둔다(관리 항목). 또는 PowerShell 에 붙여넣기
 
 ```powershell
 irm https://raw.githubusercontent.com/devkhh002/dev-env/main/windows/install.ps1 | iex
