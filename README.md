@@ -5,18 +5,13 @@ Windows 는 단계별 화면(① 인터넷 → ② Windows 설정 → ③ 드라
 
 ## 1. 실행
 
-**Windows — 새 PC (USB)**: Ventoy USB 의 `PC설치\시작하기.cmd` 를 두 번 누른다.
-인터넷이 없으면 USB 의 `네트워크 드라이버` 를 먼저 깔고, GitHub 의 최신 설치 화면을 연다.
-GitHub 에서 받지 못하면 USB 에 저장된 마지막 판(`last-good`, 잘 돈 판이 자동 저장된다)으로 연다.
-
-**버전 확인**: 설치 화면 제목·진행 창·USB 맨 위 `버전 ….txt` 파일 이름에 같은 버전(예: `2026-10-02 00:45`)이 보인다.
-버전은 `windows/version.txt` 이고, 설치 파일이 바뀌는 커밋마다 그 시각으로 자동으로 바뀐다(`.git/hooks/pre-commit`).
-
-**Windows — 인터넷이 되는 PC (랜 드라이버를 깐 새 PC 포함)**: `PC 설치 (GitHub)` 바로가기 — USB 맨 위에 있고, 설치를 마친 PC 바탕화면에도 설치 화면이 만들어 둔다(관리 항목). 또는 PowerShell 에 붙여넣기
-
-```powershell
-irm https://raw.githubusercontent.com/devkhh002/dev-env/main/windows/install.ps1 | iex
-```
+**Windows**: `PC 설치.exe` 를 두 번 누른다 → 관리자 확인 한 번 → 설치 화면. (PowerShell 창은 뜨지 않는다)
+- 새 PC: Windows 설치 → 랜 드라이버 → USB 맨 위 `PC 설치.exe`. 인터넷이 아직 안 되면 설치 화면의 ① 이 USB `PC설치\네트워크 드라이버` 의 드라이버를 깐다.
+- 받는 곳: https://github.com/devkhh002/dev-env/raw/main/dist/PcSetup.exe (이름은 `PC 설치.exe` 로 바꿔 둔다)
+- 새 판: 열 때 GitHub 의 `dist/version.txt` 가 더 새것이면 스스로 받아 바꾸고 다시 연다(USB 에 둔 것도 그 자리에서 바뀐다).
+- 앱 목록(`catalog.txt`)·프로젝트(`projects.txt`)는 열 때마다 GitHub 최신을 읽는다(인터넷이 없으면 프로그램 안에 든 판).
+- 버전: 설치 화면 제목의 빌드 시각(예: `2026-10-02 15:22`).
+- 시험용: `PC 설치.exe --list <파일>`(상태만 파일로) · `--snapshot <png>`(화면을 그림으로).
 
 **Mac** — 터미널에 붙여넣기
 
@@ -24,8 +19,10 @@ irm https://raw.githubusercontent.com/devkhh002/dev-env/main/windows/install.ps1
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/devkhh002/dev-env/main/mac/install.sh)"
 ```
 
-이미 이 저장소를 받아 둔 컴퓨터에서는 `windows\setup.ps1` / `mac/setup.sh` 를 직접 실행해도 된다.
-옵션: `-List`(상태만) · `-Only git,node`(화면 없이 이것만) · `-All`(화면 없이 전부) — Mac은 `--all` · `--only brew,gureum` · `--list` · `--dry-run`.
+Mac 옵션: `--all` · `--only brew,gureum` · `--list` · `--dry-run`.
+
+**빌드(Windows 프로그램)**: `app\build.cmd` → `dist\PcSetup.exe` · `dist\version.txt` · `dist\PcSetup.exe.sha256`. C# 컴파일러와 .NET 4.8 참조 파일은 `app\.tools` 에 받아 쓴다(이 PC 에 설치하지 않는다). 커밋·푸시하면 모든 PC 가 다음에 열 때 새 판으로 바뀐다.
+소스는 `app\src` — 항목은 `Items\*.cs`, 버튼은 `UI\*.cs`·`Upgrade.cs`, 버전 고정 값은 `Data.cs` 의 `Conf`.
 
 ## 2. 설치 목록
 
@@ -39,17 +36,16 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/devkhh002/dev-env/main/m
 | ④ 도구·앱 | winget · `catalog.txt` 의 앱(Chrome·웨일·반디집·팟플레이어 32·64비트·크롬 원격 호스트·유니콘 HTTPS·HWiNFO·CPU-Z·스티커 메모·Claude 앱 …) · **TrafficMonitor**(공식 최신판 + 저장소 설정 `windows/trafficmonitor/config.ini` → 작업 표시줄 표시, 로그인할 때 관리자 권한 예약 작업으로 자동 실행) · 반디집 광고 차단(hosts) · **한/영 전환**(AutoHotkey 관리자 권한) · Tailscale · Sunshine |
 | ⑤ 개발 환경 | Git · Node.js 24 · Python 3.13 · GitHub CLI · PowerShell 7 · Windows Terminal(Ctrl+C/V) · clasp·firebase · Claude Code · Claude 설정 · git 설정 · VirtualBox 7.2.14 |
 | ⑥ 개발 소스 | `projects.txt` 의 프로젝트 → `C:\dev` + 바로가기 (GitHub 로그인이라 기본 체크 해제) |
-| 관리 | USB 시작하기 만들기·갱신 |
+| 관리 | USB 맨 위에 이 프로그램(`PC 설치.exe`) 넣기 |
 
 **아래 버튼**
 - `앱 추가…` — winget 에서 찾아 고르면 `catalog.txt` 에 한 줄 넣고 커밋·푸시 → 모든 PC 의 설치 화면에 나온다. 넣은 앱은 체크된 채로 목록에 보여 바로 시험 설치할 수 있다.
-- `모두 최신으로` — 설치된 앱을 최신판으로. 버전 고정(`@버전`·⑤ 개발 환경, `setup.ps1` 맨 위 `$UpgradeFixed`)과 원격 호스트(Chrome 원격 데스크톱·Sunshine·Tailscale — `$UpgradeSkip`, 올리는 동안 원격이 끊긴다)는 뺀다. 팟플레이어·HWiNFO 같은 `url:`·`latest:` 앱은 공식 최신 설치본으로.
+- `모두 최신으로` — 설치된 앱을 최신판으로. 버전 고정(`@버전`·⑤ 개발 환경, `Conf.UpgradeFixed`)과 원격 호스트(Chrome 원격 데스크톱·Sunshine·Tailscale — `Conf.UpgradeSkip`, 올리는 동안 원격이 끊긴다)는 뺀다. 팟플레이어·HWiNFO 같은 `url:`·`latest:` 앱은 공식 최신 설치본으로.
 - `소스 올리기…` — `C:\dev` 의 git 프로젝트를 고르면 올라갈 파일 목록과 비밀정보 검사 결과를 보여 주고, 막힌 것이 없을 때만 커밋·푸시. 개인 키·토큰·`.env`·키 파일은 막고, 비밀번호처럼 보이는 값·Google API 키는 '확인했다' 를 체크해야 올린다. 검사한 뒤 파일이 바뀌면 다시 검사하게 한다.
 
-- 디펜더·방화벽·업데이트 차단·UAC 같은 **보안 설정은 넣지 않았다** — 필요하면 직접(WSH 등).
 - 재부팅이 필요한 항목은 설치가 끝난 뒤 "지금 재부팅?"을 묻는다(원격 접속 중이면 끊긴다).
-- 콘솔(파란 PowerShell 창)은 숨기고 설치 화면만 보인다. 설치는 숨은 진행 창에서 돌고 설치 화면이 그 기록을 보여 준다 — 받는 진행률·winget 메시지는 오른쪽 위 `진행 창 보기`. GitHub 로그인처럼 진행 창에서 입력할 것이 있으면 진행 창이 저절로 앞에 뜬다.
-- 개발 도구 버전은 `windows/setup.ps1` 맨 위 `$V` 한 곳. 앱·도구는 버전 없이 늘 최신(고정할 것만 `@버전`).
+- 설치는 설치 화면 안에서 돈다. 아래 칸에 기록이 나오고, `자세히` 를 켜면 winget·설치 프로그램 메시지까지 보인다. 기록 파일: `%USERPROFILE%\dev-env-setup.log`.
+- 개발 도구 버전은 `app\src\Data.cs` 의 `Conf.V` 한 곳. 앱·도구는 버전 없이 늘 최신(고정할 것만 `@버전`).
 
 **Mac**: Xcode 명령줄 도구 · Homebrew · git · GitHub CLI · Node 24 · Python 3.13 · clasp·firebase · Claude Code · git 설정 · **한/영 전환**(구름 입력기 + Shift+Space · Karabiner 원격 규칙) · Tailscale · Moonlight · Chrome · 프로젝트(`~/dev`). 버전은 `mac/setup.sh` 맨 위.
 
@@ -62,7 +58,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/devkhh002/dev-env/main/m
 도구 | Notepad++ | winget:Notepad++.Notepad++ | on
 ```
 
-- 아이디 찾기: PowerShell 에서 `winget search 이름` · 버전 고정: `winget:아이디@버전`
+- 아이디 찾기: 설치 화면의 `앱 추가…`, 또는 명령 창에서 `winget search 이름` · 버전 고정: `winget:아이디@버전`
 - winget 에 없는 것: 파일을 USB `PC설치\도구` 에 넣고 `usb:파일이름`
 - winget 목록이 늦어 다운로드 주소가 없어지면(404) 설치 화면에 이유가 나온다 — 며칠 뒤 다시 하거나, 공식 주소로 바꾼다
   - `url:주소` — 늘 같은 주소가 최신판인 곳(팟플레이어)
@@ -71,7 +67,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/devkhh002/dev-env/main/m
 
 **네트워크 드라이버** — 새 기종이면 랜(필요하면 Wi-Fi) 드라이버를 `.inf` 가 든 폴더째 USB `PC설치\네트워크 드라이버` 에 넣는다. 맞지 않는 PC 에서는 자동으로 건너뛴다.
 
-**설치 프로그램이 쓰는 파일**을 더하면 `windows/files.txt` 에도 한 줄 더한다(한 줄 설치·USB 시작하기가 이 목록대로 받는다).
+**설치 프로그램에 넣는 파일**(한/영 스크립트·TrafficMonitor 설정·Claude 설정 파일)은 `app/build.rsp` 의 `/resource:` 줄로 프로그램 안에 들어간다 — 파일을 더하면 거기에도 한 줄 더하고 다시 빌드한다.
 
 **프로젝트** — `projects.txt`에 한 줄 추가 → 커밋 → 설치 화면 ⑥ 에서 그 프로젝트만 체크.
 
