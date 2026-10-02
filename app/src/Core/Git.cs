@@ -49,17 +49,6 @@ namespace PcSetup
             if (hasUpstream && System.Text.RegularExpressions.Regex.IsMatch(p.Text, "rejected|fetch first|non-fast-forward"))
             {
                 var pl = Run(dir, 180, "pull", "--rebase", "--autostash", "-q");   // 커밋하지 않은 다른 수정이 있어도 받는다(잠시 치웠다 되돌린다)
-                // dev-env 의 windows/version.txt(버전 = 커밋 시각)는 양쪽 PC 가 커밋마다 고치는 파일 — 그것만 충돌했으면 지금 시각으로 정하고 이어 간다(다른 충돌, 다른 프로젝트의 version.txt 는 그대로 되돌린다)
-                bool own = File.Exists(Path.Combine(dir, @"windows\setup.ps1")) || File.Exists(Path.Combine(dir, @"app\build.cmd"));
-                own = own && File.Exists(Path.Combine(dir, @"windows\version.txt"));
-                for (int k = 0; own && pl.Code != 0 && k < 20; k++)
-                {
-                    var un = Run(dir, "-c", "core.quotepath=false", "diff", "--name-only", "--diff-filter=U");
-                    if (un.Code != 0 || un.Out.Trim() != "windows/version.txt") break;
-                    File.WriteAllText(Path.Combine(dir, @"windows\version.txt"), DateTime.Now.ToString("yyyy-MM-dd HH:mm") + "\n");
-                    Run(dir, "add", "--", "windows/version.txt");
-                    pl = Run(dir, 180, "-c", "core.editor=true", "rebase", "--continue");
-                }
                 if (pl.Code != 0) { Run(dir, "rebase", "--abort"); return new PushResult { Ok = false, Text = "GitHub 에 먼저 올라간 것과 같은 곳을 고쳐 합치지 못했습니다 — 직접 정리가 필요합니다:\r\n" + pl.Text }; }
                 // 받기는 됐지만 치워 둔 수정을 되돌리다 겹쳤으면(autostash 충돌) — 그 파일에 <<<<<<< 표시가 남고 원래 수정은 stash 에 있다. 알리고 '합치지 못함' 표시는 풀어 둔다
                 var note = "";

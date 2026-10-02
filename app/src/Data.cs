@@ -14,7 +14,7 @@ namespace PcSetup
     }
     public sealed class ProjectEntry { public string Folder, Url, Link; }
 
-    // 고정 값 — 버전을 올릴 때는 여기만 (예전 setup.ps1 맨 위와 같다)
+    // 고정 값 — 버전을 올릴 때는 여기만
     public static class Conf
     {
         public static readonly Dictionary<string, string> V = new Dictionary<string, string>

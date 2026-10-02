@@ -55,8 +55,8 @@ namespace PcSetup
             var r = Git.Run(rp, "diff", "--cached", "--quiet");
             if (r.Code == 1) return Fail(rp + " 에 커밋을 기다리는 다른 변경이 있어 건드리지 않았습니다 — 그것부터 정리하세요.");
             if (r.Code != 0) return Fail("git 으로 " + rp + " 를 확인하지 못했습니다:\r\n" + r.Text);
-            r = Git.Run(rp, "diff", "--quiet", "--", "catalog.txt", "windows/version.txt");
-            if (r.Code == 1) return Fail(rp + " 의 catalog.txt·version.txt 에 올리지 않은 수정이 있어 건드리지 않았습니다 — 그것부터 올리거나 되돌리세요.");
+            r = Git.Run(rp, "diff", "--quiet", "--", "catalog.txt");
+            if (r.Code == 1) return Fail(rp + " 의 catalog.txt 에 올리지 않은 수정이 있어 건드리지 않았습니다 — 그것부터 올리거나 되돌리세요.");
             if (r.Code != 0) return Fail("git 으로 " + rp + " 를 확인하지 못했습니다:\r\n" + r.Text);
             // 모든 PC 가 받는 곳은 GitHub 의 main — 다른 브랜치에 있으면 올려도 아무 PC 에도 안 보인다
             var u = Git.Run(rp, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}");
@@ -83,16 +83,14 @@ namespace PcSetup
             try
             {
                 AddCatalogLine(cat, group, line);
-                // 버전 = 지금 시각 (저장소의 커밋 훅과 같은 형식 — 훅이 없는 PC 에서도 설치 화면 제목에 새 버전이 보이게)
-                File.WriteAllText(Path.Combine(rp, @"windows\version.txt"), DateTime.Now.ToString("yyyy-MM-dd HH:mm") + "\n");
-                Git.Run(rp, "add", "--", "catalog.txt", "windows/version.txt");
+                Git.Run(rp, "add", "--", "catalog.txt");   // 설치 화면은 열 때마다 GitHub 의 catalog.txt 를 읽는다 — 다시 빌드할 필요 없다
                 c2 = Git.Commit(rp, "앱 추가 — " + what);
             }
             catch (Exception ex) { c2 = new ProcResult { Code = -1, Err = ex.Message }; }
             if (c2.Code != 0)
             {
                 // 커밋을 못 하면(이 PC 에 git 이름·메일이 없다 등) 넣은 줄을 되돌린다 — 담긴 채 남으면 다음 '앱 추가' 가 모두 막힌다
-                Git.Run(rp, "checkout", "HEAD", "--", "catalog.txt", "windows/version.txt");
+                Git.Run(rp, "checkout", "HEAD", "--", "catalog.txt");
                 return Fail("커밋하지 못해 목록을 되돌렸습니다 — ⑤ 'git 기본 설정' 을 먼저 하세요:\r\n" + c2.Text);
             }
             var p = Git.Push(rp, true);
