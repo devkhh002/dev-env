@@ -1,4 +1,4 @@
-﻿# 개발 PC 설치 — Windows
+﻿# PC 설치 — Windows
 #   실행하면 단계별 설치 화면이 뜬다. 고른 것만 설치하고, 이미 된 것은 건너뛴다(여러 번 실행해도 안전).
 #   powershell -ExecutionPolicy Bypass -File setup.ps1                (설치 화면)
 #   powershell -ExecutionPolicy Bypass -File setup.ps1 -List          (상태만 보기)
@@ -72,7 +72,7 @@ if (-not $isAdmin -and -not $List -and -not $Snapshot) {
 }
 
 # 설치 화면이 오류로 멈추면 숨은 콘솔 대신 알림 창으로 알린다
-trap { if ($Gui -and ('System.Windows.Forms.MessageBox' -as [type])) { [void][System.Windows.Forms.MessageBox]::Show("설치 화면 오류:`r`n$_", '개발 PC 설치', 'OK', 'Error') }; break }
+trap { if ($Gui -and ('System.Windows.Forms.MessageBox' -as [type])) { [void][System.Windows.Forms.MessageBox]::Show("설치 화면 오류:`r`n$_", 'PC 설치', 'OK', 'Error') }; break }
 
 # 설치 화면: 콘솔은 숨기고, 상태를 확인하는 동안(최대 2분)은 작은 '준비 중' 창을 띄운다
 $script:Pump = $false   # 화면이 떠 있는 동안 기다리는 곳에서 화면을 멈추지 않게(DoEvents)
@@ -85,7 +85,7 @@ if ($Gui) {
   Hide-OwnConsole
   $script:Pump = $true
   $script:Splash = New-Object System.Windows.Forms.Form
-  $script:Splash.Text = '개발 PC 설치'; $script:Splash.ClientSize = New-Object System.Drawing.Size(460, 90); $script:Splash.StartPosition = 'CenterScreen'
+  $script:Splash.Text = 'PC 설치'; $script:Splash.ClientSize = New-Object System.Drawing.Size(460, 90); $script:Splash.StartPosition = 'CenterScreen'
   $script:Splash.FormBorderStyle = 'FixedDialog'; $script:Splash.ControlBox = $false; $script:Splash.Font = New-Object System.Drawing.Font('Malgun Gothic', 10)
   $script:SplashText = New-Object System.Windows.Forms.Label
   $script:SplashText.Dock = 'Fill'; $script:SplashText.TextAlign = 'MiddleCenter'; $script:SplashText.Text = '설치 화면을 준비합니다...'
@@ -737,7 +737,7 @@ Add-Item $G9 usbkit "USB 시작하기·예비판을 이 버전($Version)으로 �
 # url·latest 앱(winget 밖)은 공식 최신 설치본으로 덮어 깐다 — 이미 깐 것만.
 function Run-Upgrade {
   Start-Transcript "$env:USERPROFILE\dev-env-setup.log" -Append | Out-Null
-  try { $Host.UI.RawUI.WindowTitle = "개발 PC 설치 버전 $Version — 모두 최신으로 (이 창을 닫지 마세요)" } catch {}
+  try { $Host.UI.RawUI.WindowTitle = "PC 설치 버전 $Version — 모두 최신으로 (이 창을 닫지 마세요)" } catch {}
   Mark "@@HWND $([DevEnv.Con]::GetConsoleWindow())"
   Say "모두 최신으로 — 설치 프로그램 버전 $Version" Cyan
   $done = 0; $fail = 0
@@ -814,7 +814,7 @@ if ($List) { "버전 $Version"; foreach ($it in $Items) { '{0,-4} {1,-26} {2,-30
 # ── 설치(일꾼) ──────────────────────────────────────────────────────
 function Run-Install($Pick) {
   Start-Transcript "$env:USERPROFILE\dev-env-setup.log" -Append | Out-Null
-  try { $Host.UI.RawUI.WindowTitle = "개발 PC 설치 버전 $Version — 진행 중 (이 창을 닫지 마세요)" } catch {}
+  try { $Host.UI.RawUI.WindowTitle = "PC 설치 버전 $Version — 진행 중 (이 창을 닫지 마세요)" } catch {}
   Mark "@@HWND $([DevEnv.Con]::GetConsoleWindow())"   # 설치 화면의 '진행 창 보기' 가 이 창을 꺼낸다
   Say "설치 프로그램 버전 $Version" Cyan
   $reboot = @(); $n = 0
@@ -864,11 +864,11 @@ public class DevEnvTree : System.Windows.Forms.TreeView {
 function Pt($x, $y) { New-Object System.Drawing.Point($x, $y) }
 function Sz($w, $h) { New-Object System.Drawing.Size($w, $h) }
 function New-Ctl($type, $x, $y, $w, $h, $text = '') { $c = New-Object "System.Windows.Forms.$type"; $c.Location = Pt $x $y; $c.Size = Sz $w $h; if ($text) { $c.Text = $text }; $c }
-function Show-Msg($text, $buttons = 'OK', $icon = 'None') { [System.Windows.Forms.MessageBox]::Show($text, '개발 PC 설치', $buttons, $icon) }
+function Show-Msg($text, $buttons = 'OK', $icon = 'None') { [System.Windows.Forms.MessageBox]::Show($text, 'PC 설치', $buttons, $icon) }
 $font = New-Object System.Drawing.Font('Malgun Gothic', 10)
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "개발 PC 설치 — 버전 $Version"; $form.ClientSize = Sz 864 800; $form.StartPosition = 'CenterScreen'; $form.Font = $font
+$form.Text = "PC 설치 — 버전 $Version"; $form.ClientSize = Sz 864 800; $form.StartPosition = 'CenterScreen'; $form.Font = $font
 try { $form.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon("$PSHOME\powershell.exe") } catch {}   # 작업 표시줄 아이콘
 $board = (Get-CimInstance Win32_BaseBoard -EA 0).Product
 $head = New-Ctl Label 12 10 714 24

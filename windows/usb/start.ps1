@@ -14,7 +14,7 @@ if (-not $isAdmin) { Start-Process powershell -Verb RunAs -WindowStyle Hidden -A
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $ui = New-Object System.Windows.Forms.Form
-$ui.Text = '개발 PC 설치 — 시작하기'; $ui.ClientSize = New-Object System.Drawing.Size(500, 100); $ui.StartPosition = 'CenterScreen'
+$ui.Text = 'PC 설치 — 시작하기'; $ui.ClientSize = New-Object System.Drawing.Size(500, 100); $ui.StartPosition = 'CenterScreen'
 $ui.FormBorderStyle = 'FixedDialog'; $ui.ControlBox = $false; $ui.Font = New-Object System.Drawing.Font('Malgun Gothic', 10)
 $lbl = New-Object System.Windows.Forms.Label
 $lbl.Dock = 'Fill'; $lbl.TextAlign = 'MiddleCenter'
@@ -22,7 +22,7 @@ $ui.Controls.Add($lbl)
 $ui.Show()
 function Say($msg) { $lbl.Text = $msg; [System.Windows.Forms.Application]::DoEvents() }
 function Wait-Sec($sec) { for ($i = 0; $i -lt $sec * 5; $i++) { Start-Sleep -Milliseconds 200; [System.Windows.Forms.Application]::DoEvents() } }
-function Show-Msg($msg, $icon = 'Information') { [void][System.Windows.Forms.MessageBox]::Show($msg, '개발 PC 설치 — 시작하기', 'OK', $icon) }
+function Show-Msg($msg, $icon = 'Information') { [void][System.Windows.Forms.MessageBox]::Show($msg, 'PC 설치 — 시작하기', 'OK', $icon) }
 
 $raw = 'https://raw.githubusercontent.com/devkhh002/dev-env/main'
 function Online { try { Invoke-WebRequest "$raw/README.md" -Method Head -UseBasicParsing -TimeoutSec 8 | Out-Null; $true } catch { $false } }

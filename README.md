@@ -1,4 +1,4 @@
-# dev-env — 새 컴퓨터 개발 환경 한 번에 설치
+# dev-env — 새 PC 한 번에 설치 (Windows 설정·드라이버·앱·개발 환경)
 
 새 윈도우·새 맥에서 하나만 실행하면 설치 화면이 뜬다. 체크한 것만 설치하고, 이미 된 것은 건너뛴다(몇 번을 다시 실행해도 안전).
 Windows 는 단계별 화면(① 인터넷 → ② Windows 설정 → ③ 드라이버 → ④ 도구·앱 → ⑤ 개발 환경 → ⑥ 개발 소스)이고, 앱·도구는 winget 으로 늘 최신판이 깔린다.
@@ -12,7 +12,7 @@ GitHub 에서 받지 못하면 USB 에 저장된 마지막 판(`last-good`, 잘 
 **버전 확인**: 설치 화면 제목·진행 창·USB 맨 위 `버전 ….txt` 파일 이름에 같은 버전(예: `2026-10-02 00:45`)이 보인다.
 버전은 `windows/version.txt` 이고, 설치 파일이 바뀌는 커밋마다 그 시각으로 자동으로 바뀐다(`.git/hooks/pre-commit`).
 
-**Windows — 인터넷이 되는 PC**: 바탕화면의 `개발 환경 설치 (GitHub)` 바로가기, 또는 PowerShell 에 붙여넣기
+**Windows — 인터넷이 되는 PC**: 바탕화면의 `PC 설치 (GitHub)` 바로가기, 또는 PowerShell 에 붙여넣기
 
 ```powershell
 irm https://raw.githubusercontent.com/devkhh002/dev-env/main/windows/install.ps1 | iex
