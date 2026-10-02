@@ -23,7 +23,7 @@ namespace PcSetup
         readonly RichTextBox log = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle, DetectUrls = false, WordWrap = true };
         readonly Label status = new Label { Dock = DockStyle.Fill, AutoEllipsis = true, ForeColor = Color.DimGray, Height = Dpi.S(22) };
         readonly FlowLayoutPanel buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true, Padding = Dpi.P(0, 4, 0, 0) };
-        Button bAll, bNone, bAdd, bUp, bSrc, bGo, bClose;
+        Button bAll, bNone, bAdd, bDel, bUp, bSrc, bGo, bClose;
         readonly Dictionary<string, TreeNode> groupNodes = new Dictionary<string, TreeNode>();
         public readonly Dictionary<string, TreeNode> NodeById = new Dictionary<string, TreeNode>();
         readonly List<KeyValuePair<string, Tone>> lines = new List<KeyValuePair<string, Tone>>();
@@ -50,11 +50,12 @@ namespace PcSetup
             bAll = Btn("전체 선택", (s, e) => SetAll(true));
             bNone = Btn("전체 해제", (s, e) => SetAll(false));
             bAdd = Btn("앱 추가…", (s, e) => { if (!working) Hooks.ShowAddApp(this); });
+            bDel = Btn("앱 빼기…", (s, e) => { if (!working) Hooks.ShowRemoveApp(this); });
             bUp = Btn("모두 최신으로", (s, e) => StartUpgrade());
             bSrc = Btn("소스 올리기…", (s, e) => { if (!working) Hooks.ShowUpload(this); });
             bGo = Btn("선택한 것 설치", (s, e) => StartInstall()); bGo.Font = new Font(UiFont, FontStyle.Bold);
             bClose = Btn("닫기", (s, e) => Close());
-            buttons.Controls.AddRange(new Control[] { bAll, bNone, bAdd, bUp, bSrc, bGo, bClose });
+            buttons.Controls.AddRange(new Control[] { bAll, bNone, bAdd, bDel, bUp, bSrc, bGo, bClose });
 
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = Dpi.P(10, 6, 10, 8) };
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -180,7 +181,23 @@ namespace PcSetup
         void SyncUp(TreeNode n) { while (n != null) { bool all = n.Nodes.Count > 0; foreach (TreeNode c in n.Nodes) if (!c.Checked) all = false; busyCheck = true; n.Checked = all; busyCheck = false; n = n.Parent; } }
         void SetAll(bool v) { busyCheck = true; foreach (TreeNode n in TreeView.Nodes) { n.Checked = v; SetDown(n, v); } busyCheck = false; }
 
-        void SetButtons(bool on) { foreach (var b in new[] { bAll, bNone, bAdd, bUp, bSrc, bGo }) b.Enabled = on; }
+        void SetButtons(bool on) { foreach (var b in new[] { bAll, bNone, bAdd, bDel, bUp, bSrc, bGo }) b.Enabled = on; }
+
+        // 항목 하나를 화면과 목록에서 뺀다(앱 빼기) — 비게 된 묶음도 숨긴다
+        public void RemoveItemNode(string id)
+        {
+            Defs.All.RemoveAll(i => i.Id == id);
+            TreeNode node; if (!NodeById.TryGetValue(id, out node)) return;
+            NodeById.Remove(id);
+            var parent = node.Parent; node.Remove();
+            while (parent != null && parent.Nodes.Count == 0)
+            {
+                var up = parent.Parent;
+                foreach (var k in groupNodes.Where(kv => kv.Value == parent).Select(kv => kv.Key).ToList()) groupNodes.Remove(k);
+                parent.Remove(); parent = up;
+            }
+            if (parent != null) SyncUp(parent);
+        }
 
         // ── 설치 ───────────────────────────────────────────────
         void StartInstall()

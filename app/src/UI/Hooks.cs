@@ -7,6 +7,10 @@ namespace PcSetup
         static partial void ShowAddAppImpl(MainForm f);
         public static void ShowAddApp(MainForm f) { ShowAddAppImpl(f); }
 
+        // 앱 빼기… (catalog.txt 에서 골라 지우고 GitHub 에 올린다 — 이 PC 에 깔린 앱은 그대로)
+        static partial void ShowRemoveAppImpl(MainForm f);
+        public static void ShowRemoveApp(MainForm f) { ShowRemoveAppImpl(f); }
+
         // 소스 올리기… (C:\dev 의 내 프로젝트를 비밀정보 검사 → 커밋·푸시)
         static partial void ShowUploadImpl(MainForm f);
         public static void ShowUpload(MainForm f) { ShowUploadImpl(f); }
