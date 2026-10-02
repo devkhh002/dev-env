@@ -17,6 +17,7 @@
 기본 앱 | 팟플레이어 32비트 | url:https://t1.daumcdn.net/potplayer/PotPlayer/Version/Latest/PotPlayerSetup.exe | on | file:C:\Program Files (x86)\DAUM\PotPlayer\PotPlayer.exe
 기본 앱 | 팟플레이어 64비트 | url:https://t1.daumcdn.net/potplayer/PotPlayer/Version/Latest/PotPlayerSetup64.exe | on | file:C:\Program Files\DAUM\PotPlayer\PotPlayer64.exe
 원격 | Chrome 원격 데스크톱 호스트 | winget:Google.ChromeRemoteDesktopHost | on | arp:Chrome Remote Desktop Host
+원격 | Moonlight (원격 화면 보기 — Sunshine 이 보내는 화면을 받는 쪽) | winget:MoonlightGameStreamingProject.Moonlight | on | arp:Moonlight
 도구 | 유니콘 HTTPS | winget:UnicornSoft.UnicornHTTPS | on
 도구 | HWiNFO | latest:https://www.sac.sk/files.php?d=13&l=H hwi_*x.exe | on | arp:HWiNFO
 도구 | CPU-Z (MSI판) | winget:CPUID.CPU-Z.MSI | on | arp:CPU-Z MSI
